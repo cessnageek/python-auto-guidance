@@ -5,9 +5,13 @@ from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsScene,\
  QGraphicsView, QGraphicsItem, QGraphicsRectItem, QLabel, QVBoxLayout, QWidget,\
- QPushButton, QMenuBar, QMenu, QAction, QFileDialog
-from PyQt5.QtGui import QPen, QBrush
+ QPushButton, QMenuBar, QMenu, QAction, QFileDialog, QOpenGLWidget
+from PyQt5.QtGui import QPen, QBrush, QOpenGLWindow, QOpenGLContext, QSurfaceFormat
 from PyQt5.Qt import Qt
+
+from OpenGL.GL import *
+from OpenGL.GLUT import *
+from OpenGL.GLU import *
  
 from mpmath import *
 mp.dps = 20
@@ -274,43 +278,6 @@ class Worker(QObject):
 
                 point_lock.release()
 
-            '''
-            if(not firstPos):
-                input('Move to position 1 and press enter')
-                x1, y1, z1, quality = updatePosition(gps)
-                #print("x1: " + str(x1) + " y1: " + str(y1) + " z1: " + str(z1))
-                f.write("x1:"+str(x1)+"\n")
-                f.write("y1:"+str(y1)+"\n")
-                f.write("z1:"+str(z1)+"\n")
-                firstPos = True
-
-            if(not secondPos and firstPos):
-                input('Move to position 2 and press enter')
-                x2, y2, z2, quality = updatePosition(gps)
-                #print("x2: " + str(x2) + " y2: " + str(y2) + " z2: " + str(z2))
-                f.write("x2:"+str(x2)+"\n")
-                f.write("y2:"+str(y2)+"\n")
-                f.write("z2:"+str(z2)+"\n")
-                pl1, pl2, pl3 = calcPlaneThroughOrigin(x1,y1,z1,x2,y2,z2)
-                f.write("pl1:"+str(pl1)+"\n")
-                f.write("pl2:"+str(pl2)+"\n")
-                f.write("pl3:"+str(pl3)+"\n")
-                #print("pl1: " + str(pl1) + "  pl2: " + str(pl2) + "  pl3: " + str(pl3))
-                #note that this normal vector points on the "right" side of the
-                #line, as looking from point 1 to point 2
-                row = 1
-                secondPos = True
-
-            if(not thirdPos and secondPos):
-                intiDirV1, initDirV2, initDirV3 = calcVelocity(a,b,x1,y1,z1,x2,y2,z2,1)
-                input('Move to position 3 and press enter')
-                x3, y3, z3, quality = updatePosition(gps)
-                distOff = calcDist(x3,y3,z3,pl1,pl2,pl3)
-                sideOfLine = int(distOff/abs(distOff))
-                #rowNum = rowNum + 1
-                thirdPos = True
-            '''
-
             if(thirdPos):
                 row = 0
                 error = 0
@@ -393,10 +360,24 @@ class Worker(QObject):
 
 keepRunning = True
 
+class MyOpenGLWidget(QOpenGLWidget):
+    def __init__(self, parent=None):
+        super(QOpenGLWidget, self).__init__(parent)
+
+    def initializeGL(self):
+        pass
+        #GLFunctions = context().functions()
+        #print(QOpenGLContext.currentContext())
+        #GLFunctions.glClearColor(1.0, 1.0, 1.0, 1.0)
+
+
+
+
+
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.title = "PyQt5 QGraphicView"
+        self.title = "Main Window"
         self.top = 200
         self.left = 500
         self.width = 750
@@ -557,11 +538,28 @@ class Window(QMainWindow):
         self.fileMenu.addAction(self.saveAction)
         self.saveAction.triggered.connect(self.saveFile)
 
-        self.createGraphicView()
+        self.createOpenGLGraphicView()
+
+        #self.createGraphicView()
  
         self.show()
  
- 
+    def createOpenGLGraphicView(self):
+        self.sceneGL = MyOpenGLWidget()
+        self.sceneGL.show()
+        #format = QSurfaceFormat()
+        #format.setDepthBufferSize(24)
+        #format.setStencilBufferSize(8)
+        #format.setVersion(3, 2)
+        #format.setProfile(QSurfaceFormat.CoreProfile)
+
+        #self.sceneGL.setFormat(format)
+        #self.sceneGL.show()
+
+
+        #self.sceneGL.initializeGL()
+        #self.sceneGL.setGeometry(int(self.width/2),0,int(self.width/2),int(self.height)+5)
+
     def createGraphicView(self):
         self.scene  =QGraphicsScene()
         self.greenBrush = QBrush(Qt.green)
@@ -659,11 +657,11 @@ class Window(QMainWindow):
 
 App = QApplication(sys.argv)
 window = Window()
-window.runMainTask()
+#window.runMainTask()
 
 while(keepRunning):
-    window.setErrorString(float(window.error * 3.28))
-    window.setTractorPos(float(window.error * -1))
+    #window.setErrorString(float(window.error * 3.28))
+    #window.setTractorPos(float(window.error * -1))
     App.processEvents()
 
 App.quit()
