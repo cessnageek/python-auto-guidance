@@ -21,6 +21,7 @@ import numpy
 import math
 
 from threading import Lock
+from queue import Queue
 
 data_lock = Lock()
 quit_lock = Lock()
@@ -33,6 +34,69 @@ newplToCalc = False
 quit = False
 keepRunning = True
 pointButtonPushed = False
+fileQueue = Queue()
+
+#Add x,y,z,lat,longi to the fileQueue to put
+#the values into the file
+def addToQueue(x, y, z, lat, longi):
+    global fileQueue
+    print("Adding to queue")
+    fileQueue.put((x,y,z,lat,longi))
+
+class fileWorker(QObject):
+    global fileQueue
+    finished = pyqtSignal()
+
+    def runFileWorker(self):
+        run = True
+        self.openFileWrite('saveFile.txt')
+        print("Opened file")
+        while(run):
+            if(QThread.currentThread().isInterruptionRequested()):
+                run = False
+                print("Interrupted")
+
+            if(not fileQueue.empty()):
+                data = fileQueue.get(False)
+                print("Committing1!")
+
+                if(not data == None):
+                    print("Committing2!")
+                    self.commitToFile(data)
+            
+        self.closeFile()
+
+    def openFileRead(self, name):
+        if(not name[-4:] == '.txt'):
+            raise ReferenceError("Filename must end in \'.txt\'")
+        self.saveFile = open(name, "r")
+        print("Opened file read")
+
+    def openFileWrite(self, name):
+        if(not name[-4:] == '.txt'):
+            raise ReferenceError("Filename must end in \'.txt\'")
+        self.saveFile = open(name, "w")
+        print("Opened file write")
+
+    def commitToFile(self,data):
+        if(not len(data) == 5):
+            raise ReferenceError("Data length is not 5")
+
+        self.saveFile.write(str(data[0]))
+        self.saveFile.write(',')
+        self.saveFile.write(str(data[1]))
+        self.saveFile.write(',')
+        self.saveFile.write(str(data[2]))
+        self.saveFile.write(',')
+        self.saveFile.write(str(data[3]))
+        self.saveFile.write(',')
+        self.saveFile.write(str(data[4]))
+        self.saveFile.write('\n')
+
+    def closeFile(self):
+        self.saveFile.close()
+        print("Closed file")
+
 
 def getNMEA(gps):
     gps.flushInput()
@@ -252,12 +316,14 @@ class Worker(QObject):
                         x1, y1, z1, quality = updatePosition(gps)
                         print("First push")
                         print(str(x1) + " " + str(y1) + " " + str(z1) + " " + str(quality))
+                        addToQueue(x1,y1,z1,0,0)
                         firstPos = True
                         pointButtonPushed = False
                     elif(not secondPos):
                         x2, y2, z2, quality = updatePosition(gps)
                         print("Second push")
                         pl1, pl2, pl3 = calcPlaneThroughOrigin(x1,y1,z1,x2,y2,z2)
+                        addToQueue(x2,y2,z2,0,0)
                         secondPos = True
                         pointButtonPushed = False
                     elif(not thirdPos):
@@ -274,49 +340,13 @@ class Worker(QObject):
 
                 point_lock.release()
 
-            '''
-            if(not firstPos):
-                input('Move to position 1 and press enter')
-                x1, y1, z1, quality = updatePosition(gps)
-                #print("x1: " + str(x1) + " y1: " + str(y1) + " z1: " + str(z1))
-                f.write("x1:"+str(x1)+"\n")
-                f.write("y1:"+str(y1)+"\n")
-                f.write("z1:"+str(z1)+"\n")
-                firstPos = True
-
-            if(not secondPos and firstPos):
-                input('Move to position 2 and press enter')
-                x2, y2, z2, quality = updatePosition(gps)
-                #print("x2: " + str(x2) + " y2: " + str(y2) + " z2: " + str(z2))
-                f.write("x2:"+str(x2)+"\n")
-                f.write("y2:"+str(y2)+"\n")
-                f.write("z2:"+str(z2)+"\n")
-                pl1, pl2, pl3 = calcPlaneThroughOrigin(x1,y1,z1,x2,y2,z2)
-                f.write("pl1:"+str(pl1)+"\n")
-                f.write("pl2:"+str(pl2)+"\n")
-                f.write("pl3:"+str(pl3)+"\n")
-                #print("pl1: " + str(pl1) + "  pl2: " + str(pl2) + "  pl3: " + str(pl3))
-                #note that this normal vector points on the "right" side of the
-                #line, as looking from point 1 to point 2
-                row = 1
-                secondPos = True
-
-            if(not thirdPos and secondPos):
-                intiDirV1, initDirV2, initDirV3 = calcVelocity(a,b,x1,y1,z1,x2,y2,z2,1)
-                input('Move to position 3 and press enter')
-                x3, y3, z3, quality = updatePosition(gps)
-                distOff = calcDist(x3,y3,z3,pl1,pl2,pl3)
-                sideOfLine = int(distOff/abs(distOff))
-                #rowNum = rowNum + 1
-                thirdPos = True
-            '''
-
             if(thirdPos):
                 row = 0
                 error = 0
                 effort = 0 #- for turning left + for turning right
                 kp = 0 #unused for now
                 x, y, z, quality = updatePosition(gps)
+                addToQueue(x,y,z,0,0)
                 data_lock.acquire()
                 if(newPost == True):
                     prevXPost = x
@@ -653,13 +683,27 @@ class Window(QMainWindow):
 
         self.thread.start()
 
+    def runSaveTask(self):
+        self.saveThread = QThread()
+        self.saveWorker = fileWorker()
+        self.saveWorker.moveToThread(self.saveThread)
+
+        self.saveThread.started.connect(self.saveWorker.runFileWorker)
+        self.saveWorker.finished.connect(self.saveThread.quit)
+        self.saveWorker.finished.connect(self.saveWorker.deleteLater)
+        self.saveThread.finished.connect(self.saveThread.deleteLater)
+
+        self.saveThread.start()
+
     def closeEvent(self, event):
         self.thread.requestInterruption()
+        self.saveThread.requestInterruption()
 
 
 App = QApplication(sys.argv)
 window = Window()
 window.runMainTask()
+window.runSaveTask()
 
 while(keepRunning):
     window.setErrorString(float(window.error * 3.28))
