@@ -47,6 +47,20 @@ def addToQueue(x, y, z, lat, longi):
     print("Adding to queue")
     fileQueue.put((x,y,z,lat,longi))
 
+#Hysteresis object.  Returns the value based on
+#the previous value.  If the difference between
+#the current value and the previous value is greater
+#than the hystersis, it updates the value.
+class hysteresis():
+    def __init__(self, hyst):
+        self.value = 0
+        self.hyst = hyst
+
+    def getValue(self, value):
+        if(abs(value - self.value) > self.hyst):
+            self.value = value
+        return self.value
+
 class fileWorker(QObject):
     global fileQueue
     finished = pyqtSignal()
@@ -616,6 +630,8 @@ class Window(QMainWindow):
         self.redraw = False
         self.lastX = 0
         self.lastY = 0
+
+        self.implementWidth = 1.52 #implement width in meters
  
         self.InitWindow()
 
@@ -904,7 +920,15 @@ class Window(QMainWindow):
 
     def drawPoints(self):
         if(self.redraw):
-            print("Redraw")
+            self.trackLineWidth = int(abs(self.implementWidth * (self.xMaxWorld - self.xMinWorld) / (self.xMax - self.xMin)))
+            if(self.trackLineWidth == 0):
+                self.trackLineWidth = 1
+            if(self.trackLineWidth == 1):
+                self.purplePen.setColor(Qt.red)
+            else:
+                self.purplePen.setColor(Qt.magenta)
+            self.purplePen.setWidth(self.trackLineWidth)
+
             self.pointsIndex, hasNext = self.pointStart.iterateSafe()
             firstRedrawPoint = True
             while(hasNext):
@@ -920,26 +944,17 @@ class Window(QMainWindow):
                 self.pointsIndex, hasNext = self.pointsIndex.iterateSafe()
             self.redraw = False
         else:
-            print("Not redraw")
             currX, currY = self.convertToLocalCoords(self.pointsIndex)
             if(not self.worldCoordsInit):
                 self.lastX = currX
                 self.lastY = currY
                 self.worldCoordsInit = True
             else:
-                print("Should draw line")
                 if(not(currX == self.lastX or currY == self.lastY)):
-                    print("drawing line")
                     self.drawLine(self.lastX, self.lastY, currX, currY)
 
                 self.lastX = currX
                 self.lastY = currY
-
-
-
-
-
-
 
     def runMainTask(self):
         self.thread = QThread()
