@@ -929,6 +929,11 @@ class Window(QMainWindow):
                 self.purplePen.setColor(Qt.magenta)
             self.purplePen.setWidth(self.trackLineWidth)
 
+            for currentLine in self.lines:
+                self.scene.removeItem(currentLine)
+
+            self.lines = []
+
             self.pointsIndex, hasNext = self.pointStart.iterateSafe()
             firstRedrawPoint = True
             while(hasNext):
