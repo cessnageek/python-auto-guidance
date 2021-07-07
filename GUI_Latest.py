@@ -905,6 +905,10 @@ class Window(QMainWindow):
     def drawPoints(self):
         if(self.redraw):
             print("Redraw")
+            for currentLine in self.lines:
+                self.scene.removeItem(currentLine)
+
+            self.lines = []
             self.pointsIndex, hasNext = self.pointStart.iterateSafe()
             firstRedrawPoint = True
             while(hasNext):
