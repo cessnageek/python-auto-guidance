@@ -771,6 +771,14 @@ class Window(QMainWindow):
         self.pointButton.setGeometry(0,int(self.height/8)*5 + 60,350, int(self.height/8))
         self.pointButton.clicked.connect(self.pointButtonClicked)
 
+        self.zoomInButton = QPushButton(self)
+        self.zoomInButton.setText("+")
+        self.zoomInButton.setGeometry(int(self.width/2)-30,int(self.height)+50,40,20)
+
+        self.zoomOutButton = QPushButton(self)
+        self.zoomOutButton.setText("-")
+        self.zoomOutButton.setGeometry(int(self.width/2)-30,int(self.height)+70,40,20)
+
         self.menuBar = QMenuBar(self)
         self.setMenuBar(self.menuBar)
         self.fileMenu = QMenu("&File",self)
@@ -1028,7 +1036,7 @@ class Window(QMainWindow):
 
 App = QApplication(sys.argv)
 window = Window()
-window.runMainTask()
+#window.runMainTask()
 #window.runSaveTask()
 
 while(keepRunning):
