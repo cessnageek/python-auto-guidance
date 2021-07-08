@@ -613,6 +613,10 @@ class Window(QMainWindow):
         self.thirdPoint = False
 
         self.worldCoordsInit = False
+        self.xMaxWorldDisplay = 0
+        self.xMinWorldDisplay = 0
+        self.yMaxWorldDisplay = 0
+        self.yMinWorldDisplay = 0
         self.xMaxWorld = 0
         self.xMinWorld = 0
         self.yMaxWorld = 0
@@ -630,6 +634,8 @@ class Window(QMainWindow):
         self.redraw = False
         self.lastX = 0
         self.lastY = 0
+
+        self.centerDrawMode = False
 
         self.implementWidth = 1.52 #implement width in meters
  
@@ -872,6 +878,7 @@ class Window(QMainWindow):
             self.qualityReadout.setText("No Fix")
 
     def setPoints(self, pointToDraw):
+        needToRedraw = False
         if(not self.worldCoordsInit):
             self.xMinWorld,self.yMinWorld,tmp = pointToDraw.get()
             #Default distance across = 20m
@@ -881,25 +888,48 @@ class Window(QMainWindow):
             #Add the point after clearing the next.  Becasue we do a deep copy,
             #we don't want to recursively add all of the next points
             self.pointsIndex = self.pointStart.add(pointToDraw.clearNext())
+
+            self.worldCoordsInit = True
         else:
             xCoord, yCoord,tmp = pointToDraw.get()
             if(xCoord > self.xMaxWorld):
                 self.xMaxWorld = xCoord
-                self.redraw = True
+                needToRedraw = True
             elif(xCoord < self.xMinWorld):
                 self.xMinWorld = xCoord
-                self.redraw = True
+                needToRedraw = True
 
             if(yCoord > self.yMaxWorld):
                 self.yMaxWorld = yCoord
-                self.redraw = True
+                needToRedraw = True
             elif(yCoord < self.yMinWorld):
                 self.yMinWorld = yCoord
-                self.redraw = True
+                needToRedraw = True
+            
+            if(not self.centerDrawMode):
 
-            #Add the point after clearing the next.  Becasue we do a deep copy,
-            #we don't want to recursively add all of the next points            
-            self.pointsIndex = self.pointsIndex.add(pointToDraw.clearNext())
+                if(needToRedraw):
+                    self.redraw = True
+                    needToRedraw = False
+
+                #Add the point after clearing the next.  Becasue we do a deep copy,
+                #we don't want to recursively add all of the next points            
+                self.pointsIndex = self.pointsIndex.add(pointToDraw.clearNext())
+
+                self.xMaxWorldDisplay = self.xMaxWorld
+                self.xMinWorldDisplay = self.xMinWorld
+                self.yMaxWorldDisplay = self.yMaxWorld
+                self.yMinWorldDisplay = self.yMinWorld
+            else:
+                self.redraw = True
+                self.xScale = 20
+                self.yScale = 20
+                
+                self.xMaxWorldDisplay = xCoord + self.xScale
+                self.xMinWorldDisplay = xCoord - self.xScale
+                self.yMaxWorldDisplay = yCoord + self.yScale
+                self.yMinWorldDisplay = yCoord - self.yScale
+
 
         self.drawPoints()
 
@@ -910,17 +940,17 @@ class Window(QMainWindow):
 
         #Essentially, the equation gets the fraction of the world max/min, and
         #multiplies that by the length of the scene, plus the scene offset
-        xScene = (xWorld - self.xMinWorld) * (self.xMax - self.xMin) / \
-        (self.xMaxWorld - self.xMinWorld) + self.xMin
+        xScene = (xWorld - self.xMinWorldDisplay) * (self.xMax - self.xMin) / \
+        (self.xMaxWorldDisplay - self.xMinWorldDisplay) + self.xMin
 
-        yScene = (yWorld - self.yMinWorld) * (self.yMax - self.yMin) / \
-        (self.yMaxWorld - self.yMinWorld) + self.yMin
+        yScene = (yWorld - self.yMinWorldDisplay) * (self.yMax - self.yMin) / \
+        (self.yMaxWorldDisplay - self.yMinWorldDisplay) + self.yMin
 
         return xScene, yScene
 
     def drawPoints(self):
         if(self.redraw):
-            self.trackLineWidth = int(abs(self.implementWidth * (self.xMaxWorld - self.xMinWorld) / (self.xMax - self.xMin)))
+            self.trackLineWidth = int(abs(self.implementWidth * (self.xMaxWorldDisplay - self.xMinWorldDisplay) / (self.xMax - self.xMin)))
             if(self.trackLineWidth == 0):
                 self.trackLineWidth = 1
             if(self.trackLineWidth == 1):
