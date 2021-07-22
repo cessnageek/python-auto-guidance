@@ -394,8 +394,8 @@ class SceneCoordinates():
         success = False
         if(self.readyToTransform):
             relativeCoord = numpy.array([[x],[y],[z]]) - self.origin
-            print("localcoord: ")
-            print(localCoord)
+            #print("localcoord: ")
+            #print(localCoord)
             localCoord = numpy.matmul(self.inverseBasis, numpy.float64(relativeCoord))
             success = True
 
@@ -546,12 +546,12 @@ class Worker(QObject):
                 points, success = localScene.calcSceneLocalCoordinates(x,y,z)
                 if(not success):
                     raise Exception('Local world coordinate calculation unsuccessful')
-                print("Points to add to linked list")
-                print(str(points[0]) + " " + str(points[1]) + " " + str(points[2]))
+                #print("Points to add to linked list")
+                #print(str(points[0]) + " " + str(points[1]) + " " + str(points[2]))
                 pointsLinkedList = pointsLinkedList.add(WorldPoint(points[0][0], points[1][0], points[2][0]))
                 self.localPointOut.emit(pointsLinkedList)
-                print("Points linked list")
-                print(pointsLinkedList.get())
+                #print("Points linked list")
+                #print(pointsLinkedList.get())
                 addToQueue(x,y,z,0,0)
                 data_lock.acquire()
                 if(newPost == True):
@@ -949,14 +949,14 @@ class Window(QMainWindow):
 
     def zoomIn(self):
         if(self.centerDrawMode):
-            self.scale = int(self.scale*1.5)
+            self.scale = int(self.scale/1.5)
 
             if(self.scale > self.scaleMax):
                 self.scale = self.scaleMax
 
     def zoomOut(self):
         if(self.centerDrawMode):
-            self.scale = int(self.scale/1.5)
+            self.scale = int(self.scale*1.5)
 
             if(self.scale < self.scaleMin):
                 self.scale = self.scaleMin
@@ -1063,13 +1063,24 @@ class Window(QMainWindow):
             print("self.xmin")
             print(self.xMin)
             '''
-            self.trackLineWidth = int(abs(self.implementWidth * (self.xMaxWorldDisplay - self.xMinWorldDisplay) / (self.xMax - self.xMin)))
+            print("redrawing")
+            print("Xmaxworldisplay: ")
+            print(self.xMaxWorldDisplay)
+            print("Xminworlddisplay: ")
+            print(self.xMinWorldDisplay)
+            if(self.xMaxWorldDisplay == self.xMinWorldDisplay):
+                self.trackLineWidth = 1
+            else:
+                self.trackLineWidth = int(abs(self.implementWidth * (self.xMax - self.xMin) / (self.xMaxWorldDisplay - self.xMinWorldDisplay)))
             if(self.trackLineWidth == 0):
                 self.trackLineWidth = 1
             if(self.trackLineWidth == 1):
                 self.purplePen.setColor(Qt.red)
             else:
                 self.purplePen.setColor(Qt.magenta)
+            print("Width: ")
+            print(self.trackLineWidth)
+
             self.purplePen.setWidth(self.trackLineWidth)
 
             for currentLine in self.lines:
@@ -1112,6 +1123,7 @@ class Window(QMainWindow):
                 self.lastX = currX
                 self.lastY = currY
             else:
+                '''
                 print("Lastx")
                 print(self.lastX)
                 print("Lasty")
@@ -1120,6 +1132,7 @@ class Window(QMainWindow):
                 print(currX)
                 print("CurrY")
                 print(currY)
+                '''
                 if(not(currX == self.lastX or currY == self.lastY)):
                     self.drawLine(self.lastX, self.lastY, currX, currY)
 
