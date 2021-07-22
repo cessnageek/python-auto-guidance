@@ -115,6 +115,48 @@ class fileWorker(QObject):
         self.saveFile.close()
         print("Closed file")
 
+#This function calculates if the line defined by
+#(p1x,p1y) -> (p2x,p2y) intersects the line defined
+#by (x1,y1) -> (x2,y2).
+def doesIntersect(x1,y1,x2,y2,p1x,p1y,p2x,p2y):
+    if((p1x == p2x and p1y == p2y) or (x1 == x2 and y1 == y2)):
+        return False
+    v1x = x2 - x1
+    v1y = y2 - y1
+
+    v2x = p2x - p1x
+    v2y = p2y - p1y
+
+    denom = (v1x*v2y) - (v1y*v2x)
+
+    #If both are parallel
+    if(denom == 0):
+        return False
+
+    t = ((y1*v2x) - (p1y*v2x) - (x1*v2y) + (p1x*v2y)) / (denom)
+    print(t)
+    if(not v2y == 0):
+        r = ((t*v1y)+(y1 - p1y))/v2y
+    else:
+        r = ((t*v1x)+(x1-p1x))/v2x
+
+    print(r)
+
+    if(t > 1 or t < 0 or r > 1):
+        return False
+    else:
+        return True
+
+def doesIntersectRect(x1,y1,x2,y2,x3,y3,x4,y4,p1x,p1y,p2x,p2y):
+    if(doesIntersect(x1,y1,x2,y2,p1x,p1y,p2x,p2y)):
+        return True
+    if(doesIntersect(x2,y2,x3,y3,p1x,p1y,p2x,p2y)):
+        return True
+    if(doesIntersect(x3,y3,x4,y4,p1x,p1y,p2x,p2y)):
+        return True
+    if(doesIntersect(x4,y4,x1,y1,p1x,p1y,p2x,p2y)):
+        return True
+    return False
 
 def getNMEA(gps):
     gps.flushInput()
@@ -534,13 +576,18 @@ class Worker(QObject):
                     prevYPost = y
                     prevZPost = z
 
+                # this is our actual distance from the original plane along
+                # a normal to the plane
+                actualValue = calcDist(x,y,z,pl1,pl2,pl3)
+
+                rowNum = round(actualValue / offset)
+                print("rowNum")
+                print(rowNum)
+
                 # this is a simple calculation for our desired distance
                 # from the original plane
                 desiredValue = sideOfLine * offset * rowNum
 
-                # this is our actual distance from the original plane along
-                # a normal to the plane
-                actualValue = calcDist(x,y,z,pl1,pl2,pl3)
 
                 # this is our 3D earth-referenced velocity vector projected onto
                 # a plane tangent to the WGS84 ellipse at our current lat/long
@@ -613,6 +660,10 @@ class Window(QMainWindow):
         self.thirdPoint = False
 
         self.worldCoordsInit = False
+        self.xMaxWorldDisplay = 0
+        self.xMinWorldDisplay = 0
+        self.yMaxWorldDisplay = 0
+        self.yMinWorldDisplay = 0
         self.xMaxWorld = 0
         self.xMinWorld = 0
         self.yMaxWorld = 0
@@ -631,8 +682,14 @@ class Window(QMainWindow):
         self.lastX = 0
         self.lastY = 0
 
+        self.centerDrawMode = False
+
         self.implementWidth = 1.52 #implement width in meters
- 
+
+        self.scale = 20 #scale in meters
+        self.scaleMax = 150
+        self.scaleMin = 5
+
         self.InitWindow()
 
     def openFile(self):
@@ -765,6 +822,21 @@ class Window(QMainWindow):
         self.pointButton.setGeometry(0,int(self.height/8)*5 + 60,350, int(self.height/8))
         self.pointButton.clicked.connect(self.pointButtonClicked)
 
+        self.zoomInButton = QPushButton(self)
+        self.zoomInButton.setText("+")
+        self.zoomInButton.setGeometry(int(self.width/2)-60,50,40,20)
+        self.zoomInButton.clicked.connect(self.zoomIn)
+
+        self.zoomOutButton = QPushButton(self)
+        self.zoomOutButton.setText("-")
+        self.zoomOutButton.setGeometry(int(self.width/2)-60,80,40,20)
+        self.zoomOutButton.clicked.connect(self.zoomOut)
+
+        self.viewModeButton = QPushButton(self)
+        self.viewModeButton.setText("View Mode")
+        self.viewModeButton.setGeometry(int(self.width/2) - 100, 110, 60, 30)
+        self.viewModeButton.clicked.connect(self.toggleViewMode)
+
         self.menuBar = QMenuBar(self)
         self.setMenuBar(self.menuBar)
         self.fileMenu = QMenu("&File",self)
@@ -825,15 +897,19 @@ class Window(QMainWindow):
         self.tractor.setPos(int(self.width/4)-int(self.tractorWidth/2),\
          int(self.height/2)-int(self.tractorHeight/2))
 
+    def toggleViewMode(self):
+        self.centerDrawMode = (not self.centerDrawMode)
+        self.redraw = True
+
     def drawLine(self, x1, y1, x2, y2):
         #Note, this works in coordinates with (0,0) as the bottom left
         #corner, not the top left corner.
-        if(x1 < 0 or x2 < 0 or y1 < 0 or y2 < 0):
-            print("All inputs must be positive")
-        else:
-            lineLength = sqrt((x2-x1)**2 + (y2-y1)**2)
-            self.lines.append(self.scene.addLine(0,0,int(x2-x1),int(y1-y2),self.purplePen))
-            self.lines[len(self.lines)-1].setPos(x1, (self.height-y1))
+        #if(x1 < 0 or x2 < 0 or y1 < 0 or y2 < 0):
+        #    print("All inputs must be positive")
+        #else:
+        lineLength = sqrt((x2-x1)**2 + (y2-y1)**2)
+        self.lines.append(self.scene.addLine(0,0,int(x2-x1),int(y1-y2),self.purplePen))
+        self.lines[len(self.lines)-1].setPos(x1, (self.height-y1))
 
     def setTractorPos(self, error):
         pixels = int(error * self.width * 0.125)
@@ -871,7 +947,23 @@ class Window(QMainWindow):
         else:
             self.qualityReadout.setText("No Fix")
 
+    def zoomIn(self):
+        if(self.centerDrawMode):
+            self.scale = int(self.scale*1.5)
+
+            if(self.scale > self.scaleMax):
+                self.scale = self.scaleMax
+
+    def zoomOut(self):
+        if(self.centerDrawMode):
+            self.scale = int(self.scale/1.5)
+
+            if(self.scale < self.scaleMin):
+                self.scale = self.scaleMin
+
     def setPoints(self, pointToDraw):
+        print("In set points")
+        needToRedraw = False
         if(not self.worldCoordsInit):
             self.xMinWorld,self.yMinWorld,tmp = pointToDraw.get()
             #Default distance across = 20m
@@ -881,25 +973,57 @@ class Window(QMainWindow):
             #Add the point after clearing the next.  Becasue we do a deep copy,
             #we don't want to recursively add all of the next points
             self.pointsIndex = self.pointStart.add(pointToDraw.clearNext())
+
+
+            self.xMaxWorldDisplay = self.xMaxWorld
+            self.xMinWorldDisplay = self.xMinWorld
+            self.yMaxWorldDisplay = self.yMaxWorld
+            self.yMinWorldDisplay = self.yMinWorld
+
+            self.worldCoordsInit = True
         else:
             xCoord, yCoord,tmp = pointToDraw.get()
             if(xCoord > self.xMaxWorld):
                 self.xMaxWorld = xCoord
-                self.redraw = True
+                needToRedraw = True
             elif(xCoord < self.xMinWorld):
                 self.xMinWorld = xCoord
-                self.redraw = True
+                needToRedraw = True
 
             if(yCoord > self.yMaxWorld):
                 self.yMaxWorld = yCoord
-                self.redraw = True
+                needToRedraw = True
             elif(yCoord < self.yMinWorld):
                 self.yMinWorld = yCoord
-                self.redraw = True
+                needToRedraw = True
+            
+            if(not self.centerDrawMode):
 
-            #Add the point after clearing the next.  Becasue we do a deep copy,
-            #we don't want to recursively add all of the next points            
-            self.pointsIndex = self.pointsIndex.add(pointToDraw.clearNext())
+                if(needToRedraw):
+                    self.redraw = True
+                    needToRedraw = False
+
+                #Add the point after clearing the next.  Becasue we do a deep copy,
+                #we don't want to recursively add all of the next points            
+                self.pointsIndex = self.pointsIndex.add(pointToDraw.clearNext())
+
+                self.xMaxWorldDisplay = self.xMaxWorld
+                self.xMinWorldDisplay = self.xMinWorld
+                self.yMaxWorldDisplay = self.yMaxWorld
+                self.yMinWorldDisplay = self.yMinWorld
+                print("Setting xMaxWorldDisplay to")
+                #print(self.xMaxWorldDisplay)
+            else:
+
+                self.pointsIndex = self.pointsIndex.add(pointToDraw.clearNext())
+
+                self.redraw = True
+                               
+                self.xMaxWorldDisplay = xCoord + self.scale
+                self.xMinWorldDisplay = xCoord - self.scale
+                self.yMaxWorldDisplay = yCoord + self.scale
+                self.yMinWorldDisplay = yCoord - self.scale
+
 
         self.drawPoints()
 
@@ -907,20 +1031,39 @@ class Window(QMainWindow):
     #defined by the maximum and minimum world and scene values
     def convertToLocalCoords(self, pointToConvert):
         xWorld, yWorld, tmp = pointToConvert.get()
-
+        '''
+        print("xWorld")
+        print(xWorld)
+        print("yWOrld")
+        print(yWorld)
+        print("xmaxworld")
+        print(self.xMaxWorld)
+        print("xminworld")
+        print(self.xMinWorld)
+        print("xmaxworlddisplay")
+        print(self.xMaxWorldDisplay)
+        print("xminworlddisplay")
+        print(self.xMinWorldDisplay)
+        '''
         #Essentially, the equation gets the fraction of the world max/min, and
         #multiplies that by the length of the scene, plus the scene offset
-        xScene = (xWorld - self.xMinWorld) * (self.xMax - self.xMin) / \
-        (self.xMaxWorld - self.xMinWorld) + self.xMin
+        xScene = (xWorld - self.xMinWorldDisplay) * (self.xMax - self.xMin) / \
+        (self.xMaxWorldDisplay - self.xMinWorldDisplay) + self.xMin
 
-        yScene = (yWorld - self.yMinWorld) * (self.yMax - self.yMin) / \
-        (self.yMaxWorld - self.yMinWorld) + self.yMin
+        yScene = (yWorld - self.yMinWorldDisplay) * (self.yMax - self.yMin) / \
+        (self.yMaxWorldDisplay - self.yMinWorldDisplay) + self.yMin
 
         return xScene, yScene
 
     def drawPoints(self):
         if(self.redraw):
-            self.trackLineWidth = int(abs(self.implementWidth * (self.xMaxWorld - self.xMinWorld) / (self.xMax - self.xMin)))
+            '''
+            print("self.xmax")
+            print(self.xMax)
+            print("self.xmin")
+            print(self.xMin)
+            '''
+            self.trackLineWidth = int(abs(self.implementWidth * (self.xMaxWorldDisplay - self.xMinWorldDisplay) / (self.xMax - self.xMin)))
             if(self.trackLineWidth == 0):
                 self.trackLineWidth = 1
             if(self.trackLineWidth == 1):
@@ -928,6 +1071,11 @@ class Window(QMainWindow):
             else:
                 self.purplePen.setColor(Qt.magenta)
             self.purplePen.setWidth(self.trackLineWidth)
+
+            for currentLine in self.lines:
+                self.scene.removeItem(currentLine)
+
+            self.lines = []
 
             self.pointsIndex, hasNext = self.pointStart.iterateSafe()
             firstRedrawPoint = True
@@ -937,19 +1085,41 @@ class Window(QMainWindow):
                     firstRedrawPoint = False
                 else:
                     currX, currY = self.convertToLocalCoords(self.pointsIndex)
-                    if(not(currX == self.lastX or currY == self.lastY)):
-                        self.drawLine(self.lastX, self.lastY, currX, currY)
+                    if(self.centerDrawMode):
+                        '''
+                        if((currX >= self.xMin and currX <= self.xMax and \
+                            currY >= self.yMin and currY <= self.yMax) or \
+                            (self.lastX >= self.xMin and self.lastX <= self.xMax and \
+                            self.lastY >= self.yMin and self.lastY <= self.yMax)):
+
+                            self.drawLine(self.lastX, self.lastY, currX, currY)
+                        elif(doesIntersectRect(self.xMin,self.yMin,self,xMin,self.yMax,\
+                            self.xMax,self.yMax,self.xMax,self.yMin,self.lastX,self.lastY,\
+                            currX,currY)):
+                        '''
+                        if(not(currX == self.lastX or currY == self.lastY)):
+                            self.drawLine(self.lastX, self.lastY, currX, currY)
+                    else:
+                        if(not(currX == self.lastX or currY == self.lastY)):
+                            self.drawLine(self.lastX, self.lastY, currX, currY)
                     self.lastX = currX
                     self.lastY = currY
                 self.pointsIndex, hasNext = self.pointsIndex.iterateSafe()
             self.redraw = False
         else:
             currX, currY = self.convertToLocalCoords(self.pointsIndex)
-            if(not self.worldCoordsInit):
+            if(self.lastX == None or self.lastY == None):
                 self.lastX = currX
                 self.lastY = currY
-                self.worldCoordsInit = True
             else:
+                print("Lastx")
+                print(self.lastX)
+                print("Lasty")
+                print(self.lastY)
+                print("CurrX")
+                print(currX)
+                print("CurrY")
+                print(currY)
                 if(not(currX == self.lastX or currY == self.lastY)):
                     self.drawLine(self.lastX, self.lastY, currX, currY)
 
@@ -993,8 +1163,13 @@ class Window(QMainWindow):
 
 App = QApplication(sys.argv)
 window = Window()
+print(window.centerDrawMode)
 window.runMainTask()
 #window.runSaveTask()
+
+#print(doesIntersect(0,0,1,5,-1,1,3,2))
+#print(doesIntersect(0,0,0,5,0,0,-1,1))
+
 
 while(keepRunning):
     window.setErrorString(float(window.error * 3.28))

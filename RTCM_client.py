@@ -5,10 +5,11 @@ import serial
 import base64
 import socket
 from errno import ENETUNREACH, EPIPE
+from userPassVariable import userPass
 
 url = '165.206.203.10'
 mountpoint = 'RTCM3_IMAX'
-userPass = ('cessnageek1:abaloneShroud!12').encode('ascii')
+
 userPass64 = base64.b64encode(userPass).decode('ascii')
 header =\
 "GET /RTCM3_IMAX HTTP/1.1\r\n" +\
