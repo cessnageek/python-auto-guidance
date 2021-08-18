@@ -433,6 +433,9 @@ class Worker(QObject):
         x = mpf(0)
         y = mpf(0)
         z = mpf(0)
+        lastX = mpf(0)
+        lastY = mpf(0)
+        lastZ = mpf(0)
         prevXPost = mpf(0)
         prevYPost = mpf(0)
         prevZPost = mpf(0)
@@ -442,7 +445,7 @@ class Worker(QObject):
         pl1 = mpf(0.0)
         pl2 = mpf(0.0)
         pl3 = mpf(0.0)
-        offset = 1.52 # 5ft in meters
+        offset = 1.803 # 5ft in meters
         rowNum = 0 # start on row 0
         rate = 10 # computation rate in hz
         sideOfLine = 1
@@ -546,13 +549,16 @@ class Worker(QObject):
                 points, success = localScene.calcSceneLocalCoordinates(x,y,z)
                 if(not success):
                     raise Exception('Local world coordinate calculation unsuccessful')
-                #print("Points to add to linked list")
-                #print(str(points[0]) + " " + str(points[1]) + " " + str(points[2]))
+
                 pointsLinkedList = pointsLinkedList.add(WorldPoint(points[0][0], points[1][0], points[2][0]))
                 self.localPointOut.emit(pointsLinkedList)
-                #print("Points linked list")
-                #print(pointsLinkedList.get())
-                addToQueue(x,y,z,0,0)
+
+                distFromLast = sqrt((x-lastX)**2 + (y-lastY)**2 + (z-lastZ)**2)
+                if(distFromLast > 0.5):
+                    addToQueue(x,y,z,0,0)
+                    lastX = x
+                    lastY = y
+                    lastZ = z
                 data_lock.acquire()
                 if(newPost == True):
                     prevXPost = x
@@ -600,6 +606,9 @@ class Worker(QObject):
                 # no need for direction unit vector, because we only care about sign
                 directionSign = initDirV1 * v1 + initDirV2 * v2 + initDirV3 * v3
                 error = mpf(desiredValue) - actualValue
+                print("error: " + str(error))
+                print("desired value: " + str(desiredValue))
+                print("actual value: " + str(actualValue))
                 distFromPrev = math.sqrt((x-prevXPost)**2 + (y-prevYPost)**2 + (z-prevZPost)**2)
 
                 steer = 0
@@ -684,7 +693,7 @@ class Window(QMainWindow):
 
         self.centerDrawMode = False
 
-        self.implementWidth = 1.52 #implement width in meters
+        self.implementWidth = 1.803 #implement width in meters
 
         self.scale = 20 #scale in meters
         self.scaleMax = 150
