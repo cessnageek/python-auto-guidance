@@ -7,13 +7,13 @@ import socket
 from errno import ENETUNREACH, EPIPE
 from userPassVariable import userPass
 
-url = '165.206.203.10'
-mountpoint = 'RTCM3_IMAX'
+url = '151.111.143.7'
+mountpoint = 'RTCM_31_NAD83(2011)'
 
 userPass64 = base64.b64encode(userPass).decode('ascii')
 header =\
-"GET /RTCM3_IMAX HTTP/1.1\r\n" +\
-"Host http://165.206.203.10:10000\r\n" +\
+"GET /RTCM_31_NAD83(2011) HTTP/1.1\r\n" +\
+"Host http://151.111.143.7:9000\r\n" +\
 "Ntrip-Version: Ntrip/2.0\r\n" +\
 "User-Agent: NTRIP Client 1.0\r\n\r\n" +\
 "Authorization: Basic {}\r\n".format(userPass64)
@@ -24,7 +24,7 @@ connectToServer = False
 try:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(10.0)
-    s.connect((url,10000))
+    s.connect((url,9000))
     print("connected")
     s.send(header.encode('ascii'))
 except socket.timeout:
@@ -96,12 +96,13 @@ while(True):
 
         if(not connectToServer):
             dataFromServer = b''
-            #print("Delta: " + str(time.time() - RTCMTimer))
             RTCMToServer = getNMEA(gps)
-            print(RTCMToServer)
+            #print(RTCMToServer)
             try:
                 s.send(RTCMToServer.encode('ascii'))
                 dataFromServer = s.recv(1024)
+                print("Data from server")
+                print(dataFromServer)
             except socket.timeout:
                 print("Socket timed out... trying again.")
                 connectToServer = True

@@ -592,7 +592,8 @@ class Worker(QObject):
 
                 # this is a simple calculation for our desired distance
                 # from the original plane
-                desiredValue = sideOfLine * offset * rowNum
+                #desiredValue = sideOfLine * offset * rowNum
+                desiredValue = 0
 
 
                 # this is our 3D earth-referenced velocity vector projected onto
