@@ -44,7 +44,7 @@ fileQueue = Queue()
 #the values into the file
 def addToQueue(x, y, z, lat, longi):
     global fileQueue
-    print("Adding to queue")
+    #print("Adding to queue")
     fileQueue.put((x,y,z,lat,longi))
 
 #Hysteresis object.  Returns the value based on
@@ -134,13 +134,13 @@ def doesIntersect(x1,y1,x2,y2,p1x,p1y,p2x,p2y):
         return False
 
     t = ((y1*v2x) - (p1y*v2x) - (x1*v2y) + (p1x*v2y)) / (denom)
-    print(t)
+    #print(t)
     if(not v2y == 0):
         r = ((t*v1y)+(y1 - p1y))/v2y
     else:
         r = ((t*v1x)+(x1-p1x))/v2x
 
-    print(r)
+    #print(r)
 
     if(t > 1 or t < 0 or r > 1):
         return False
@@ -256,6 +256,11 @@ def parseNMEA(inputStr):
 def updatePosition(gps):
     inputNMEA = getNMEA(gps)
     lat,longi,qual,alt,geoidSep = parseNMEA(inputNMEA)
+    print("Latitude: ")
+    print(lat)
+    print("Longitude: ")
+    print(longi)
+    print("\n")
     if (qual >= 0):
         height = alt + geoidSep
         x,y,z = getECEF(lat, longi, height)
@@ -356,12 +361,12 @@ class SceneCoordinates():
     #This function sets the basis matrix to the 
     #basis vectors <v1> <v2> <v3>
     def setBasis(self, v1, v2, v3):
-        print("V1: ")
-        print(v1)
-        print("V2: ")
-        print(v2)
-        print("V3: ")
-        print(v3)
+        #print("V1: ")
+        #print(v1)
+        #print("V2: ")
+        #print(v2)
+        #print("V3: ")
+        #print(v3)
         self.basis = numpy.float64(numpy.array([[v1[0],v2[0],v3[0]],
                                 [v1[1],v2[1],v3[1]],
                                 [v1[2],v2[2],v3[2]]]))
@@ -369,7 +374,7 @@ class SceneCoordinates():
         #self.basis[0] = numpy.array(v1)
         #self.basis[1] = numpy.array(v2)
         #self.basis[2] = numpy.array(v3)
-        print(self.basis)
+        #print(self.basis)
         self.calcInverseBasis()
 
 
@@ -380,9 +385,9 @@ class SceneCoordinates():
         try:
             self.inverseBasis = numpy.linalg.inv(self.basis)
         except numpy.linalg.LinAlgError as e:
-            print(self.basis)
-            print(e)
-            print("Unable to calculate inverse basis")
+            #print(self.basis)
+            #print(e)
+            #print("Unable to calculate inverse basis")
             self.readyToTransform = False
 
 
@@ -587,13 +592,12 @@ class Worker(QObject):
                 actualValue = calcDist(x,y,z,pl1,pl2,pl3)
 
                 rowNum = round(actualValue / offset)
-                print("rowNum")
+                #print("rowNum")
                 print(rowNum)
 
                 # this is a simple calculation for our desired distance
                 # from the original plane
-                #desiredValue = sideOfLine * offset * rowNum
-                desiredValue = 0
+                desiredValue = sideOfLine * offset
 
 
                 # this is our 3D earth-referenced velocity vector projected onto
@@ -607,9 +611,9 @@ class Worker(QObject):
                 # no need for direction unit vector, because we only care about sign
                 directionSign = initDirV1 * v1 + initDirV2 * v2 + initDirV3 * v3
                 error = mpf(desiredValue) - actualValue
-                print("error: " + str(error))
-                print("desired value: " + str(desiredValue))
-                print("actual value: " + str(actualValue))
+                #print("error: " + str(error))
+                #print("desired value: " + str(desiredValue))
+                #print("actual value: " + str(actualValue))
                 distFromPrev = math.sqrt((x-prevXPost)**2 + (y-prevYPost)**2 + (z-prevZPost)**2)
 
                 steer = 0
@@ -972,7 +976,7 @@ class Window(QMainWindow):
                 self.scale = self.scaleMin
 
     def setPoints(self, pointToDraw):
-        print("In set points")
+        #print("In set points")
         needToRedraw = False
         if(not self.worldCoordsInit):
             self.xMinWorld,self.yMinWorld,tmp = pointToDraw.get()
@@ -1021,7 +1025,7 @@ class Window(QMainWindow):
                 self.xMinWorldDisplay = self.xMinWorld
                 self.yMaxWorldDisplay = self.yMaxWorld
                 self.yMinWorldDisplay = self.yMinWorld
-                print("Setting xMaxWorldDisplay to")
+                #print("Setting xMaxWorldDisplay to")
                 #print(self.xMaxWorldDisplay)
             else:
 
@@ -1073,11 +1077,11 @@ class Window(QMainWindow):
             print("self.xmin")
             print(self.xMin)
             '''
-            print("redrawing")
-            print("Xmaxworldisplay: ")
-            print(self.xMaxWorldDisplay)
-            print("Xminworlddisplay: ")
-            print(self.xMinWorldDisplay)
+            #print("redrawing")
+            #print("Xmaxworldisplay: ")
+            #print(self.xMaxWorldDisplay)
+            #print("Xminworlddisplay: ")
+            #print(self.xMinWorldDisplay)
             if(self.xMaxWorldDisplay == self.xMinWorldDisplay):
                 self.trackLineWidth = 1
             else:
@@ -1088,8 +1092,8 @@ class Window(QMainWindow):
                 self.purplePen.setColor(Qt.red)
             else:
                 self.purplePen.setColor(Qt.magenta)
-            print("Width: ")
-            print(self.trackLineWidth)
+            #print("Width: ")
+            #print(self.trackLineWidth)
 
             self.purplePen.setWidth(self.trackLineWidth)
 
