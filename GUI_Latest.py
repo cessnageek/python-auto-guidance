@@ -220,7 +220,7 @@ def parseNMEA(inputStr):
                     latDMS = mpf(latStr)
                     latDeg = mp.floor(latDMS) * -0.01
                     latMinutes = latDMS - (latDeg * 100)
-                    latOut = mpf(latDeg + (latMinutes / 60))
+                    latOut = mpf(latDeg - (latMinutes / 60))
                 else:
                     latDMS = mpf(latStr)
                     latDeg = mp.floor(latDMS) * 0.01
@@ -231,7 +231,7 @@ def parseNMEA(inputStr):
                     longDMS = mpf(longStr)
                     longDeg = mp.floor(longDMS) * -0.01
                     longMinutes = longDMS - (longDeg * 100)
-                    longOut = mpf(longDeg + (longMinutes / 60))
+                    longOut = mpf(longDeg - (longMinutes / 60))
                 else:
                     longDMS = mpf(longStr)
                     longDeg = mp.floor(longDMS) * 0.01
