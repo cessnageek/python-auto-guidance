@@ -295,6 +295,13 @@ def calcVelocity(a,b,x1,y1,z1,x2,y2,z2,delT):
 
     return v1, v2, v3
 
+# This object defines a world point, which is an x, y, z coordinate in the ECEF
+# coordinate system.  This is a linked list data structure, so this object has
+# iterate methods.  The iterate method just returns self.next, even if self.next
+# does not exist.  The iterateSafe method returns self.next and True if self.next
+# does exist.  Else, it returns self and False if self.next does not exist.
+# The get function returns the current x, y, z coordinates for this object.
+# clearNext clears self.next.
 class WorldPoint():
     def __init__(self, xWorld, yWorld, zWorld, empty=False):
         if (not empty):
@@ -328,6 +335,7 @@ class WorldPoint():
         self.next = None
         return self
 
+# This object holds the conversion from world ECEF to scene coordinates.
 class SceneCoordinates():
     def __init__(self,x0, y0, z0, x1, y1, z1, n1, n2, n3):
         self.basis = numpy.array([[0,0,0],
@@ -361,20 +369,9 @@ class SceneCoordinates():
     #This function sets the basis matrix to the 
     #basis vectors <v1> <v2> <v3>
     def setBasis(self, v1, v2, v3):
-        #print("V1: ")
-        #print(v1)
-        #print("V2: ")
-        #print(v2)
-        #print("V3: ")
-        #print(v3)
         self.basis = numpy.float64(numpy.array([[v1[0],v2[0],v3[0]],
                                 [v1[1],v2[1],v3[1]],
                                 [v1[2],v2[2],v3[2]]]))
-
-        #self.basis[0] = numpy.array(v1)
-        #self.basis[1] = numpy.array(v2)
-        #self.basis[2] = numpy.array(v3)
-        #print(self.basis)
         self.calcInverseBasis()
 
 
