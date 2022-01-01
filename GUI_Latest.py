@@ -40,6 +40,14 @@ keepRunning = True
 pointButtonPushed = False
 fileQueue = Queue()
 
+def sign(x):
+    if(x > 0):
+        return 1
+    elif(x == 0):
+        return 0
+    elif(x < 0):
+        return -1
+
 #Add x,y,z,lat,longi to the fileQueue to put
 #the values into the file
 def addToQueue(x, y, z, lat, longi):
@@ -267,6 +275,8 @@ def updatePosition(gps):
     return mpf(x),mpf(y),mpf(z),qual
 
 def calcPlaneThroughOrigin(x1,y1,z1,x2,y2,z2):
+    #initial cross final position.  Normal points to
+    # the right of the initial direction of travel
     v1 = mpf(y1 * z2 - z1 * y2)
     v2 = mpf(z1 * x2 - x1 * z2)
     v3 = mpf(x1 * y2 - y1 * x2)
@@ -294,6 +304,36 @@ def calcVelocity(a,b,x1,y1,z1,x2,y2,z2,delT):
     v3 = v1/delT
 
     return v1, v2, v3
+
+# This function calculates the direction of travel projected onto the 
+# tangent plane to the WGS84 ellipsoid at the current position, as well as
+# the direction of the line projected onto the tangent plane.
+# Inputs:
+# a, b from WGS84.  x1, y1, z1, x2, y2, z2 from previous and current location
+# n1, n2, n3 from line plane
+def calcDirAndNormalProjection(a,b,x1,y1,z1,x2,y2,z2,n1,n2,n3):
+    direction = numpy.array([x2-x1, y2-y1, z2-z1])
+    norm = numpy.array([n1,n2,n3])
+
+    t = mpf(math.sqrt((a**2 * b**2)/(x2**2 * b**2 + y2**2 * b**2 + z2**2 * a*2)))
+    xEllipse = x2 * t
+    yEllipse = y2 * t
+    zEllipse = z2 * t
+    t1 = mpf(2 * xEllipse / (a**2))
+    t2 = mpf(2 * yEllipse / (a**2))
+    t3 = mpf(2 * zEllipse / (b**2))
+
+    tangent = numpy.array([t1, t2, t3])
+
+    lineProj = numpy.cross(tangent, norm)
+    dirProj = numpy.cross(numpy.cross(tangent, direction), tangent)
+
+
+    phi = numpy.arcsin(numpy.linalg.norm(numpy.cross(lineProj, direction))/ \
+        (numpy.linalg.norm(lineProj) * numpy.linalg.norm(direction)))
+
+    return phi
+
 
 # This object defines a world point, which is an x, y, z coordinate in the ECEF
 # coordinate system.  This is a linked list data structure, so this object has
@@ -506,7 +546,7 @@ class Worker(QObject):
                     elif(not secondPos):
                         x2, y2, z2, quality = updatePosition(gps)
                         print("Second push")
-                        pl1, pl2, pl3 = calcPlaneThroughOrigin(x1,y1,z1,x2,y2,z2)
+                        pl1, pl2, pl3 = calcPlaneThroughOrigin(x1,y1,z1,x2,y2,z2) # Normal vector to plane through origin
                         addToQueue(x2,y2,z2,0,0)
 
                         t = mpf(math.sqrt((a**2 * b**2)/(x2**2 * b**2 + y2**2 * b**2 + z2**2 * a*2)))
@@ -605,12 +645,14 @@ class Worker(QObject):
                 ylast = y
                 zlast = z
 
+                phi = calcDirAndNormalProjection(a,b,xlast,ylast,zlast,x,y,z,pl1,pl2,pl3)
+
+                print(phi)
+
                 # no need for direction unit vector, because we only care about sign
                 directionSign = initDirV1 * v1 + initDirV2 * v2 + initDirV3 * v3
                 error = mpf(desiredValue) - actualValue
-                #print("error: " + str(error))
-                #print("desired value: " + str(desiredValue))
-                #print("actual value: " + str(actualValue))
+
                 distFromPrev = math.sqrt((x-prevXPost)**2 + (y-prevYPost)**2 + (z-prevZPost)**2)
 
                 steer = 0
@@ -1203,5 +1245,3 @@ while(keepRunning):
 App.quit()
 
 #sys.exit(App.exec_())
-
-
