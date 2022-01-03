@@ -264,11 +264,10 @@ def parseNMEA(inputStr):
 def updatePosition(gps):
     inputNMEA = getNMEA(gps)
     lat,longi,qual,alt,geoidSep = parseNMEA(inputNMEA)
-    print("Latitude: ")
-    print(lat)
-    print("Longitude: ")
-    print(longi)
-    print("\n")
+    #print("Latitude: ")
+    #print(lat)
+    #print("Longitude: ")
+    #print(longi)
     if (qual >= 0):
         height = alt + geoidSep
         x,y,z = getECEF(lat, longi, height)
@@ -311,7 +310,8 @@ def calcVelocity(a,b,x1,y1,z1,x2,y2,z2,delT):
 # Inputs:
 # a, b from WGS84.  x1, y1, z1, x2, y2, z2 from previous and current location
 # n1, n2, n3 from line plane
-def calcDirAndNormalProjection(a,b,x1,y1,z1,x2,y2,z2,n1,n2,n3):
+# e1, e2 last and current error
+def calcDirAndNormalProjection(a,b,x1,y1,z1,x2,y2,z2,n1,n2,n3,e1,e2):
     direction = numpy.array([x2-x1, y2-y1, z2-z1])
     norm = numpy.array([n1,n2,n3])
 
@@ -328,11 +328,24 @@ def calcDirAndNormalProjection(a,b,x1,y1,z1,x2,y2,z2,n1,n2,n3):
     lineProj = numpy.cross(tangent, norm)
     dirProj = numpy.cross(numpy.cross(tangent, direction), tangent)
 
+    lineProjMag = numpy.linalg.norm(lineProj)
+    directionMag = numpy.linalg.norm(direction)
+    if(not (lineProjMag == 0 or directionMag == 0)):
+        sign = 0
+        crossProduct = numpy.cross(lineProj, direction)
+        dotProduct = numpy.dot(lineProj, direction)
 
-    phi = numpy.arcsin(numpy.linalg.norm(numpy.cross(lineProj, direction))/ \
-        (numpy.linalg.norm(lineProj) * numpy.linalg.norm(direction)))
+        if(e1 > e2):
+            sign = -1
+        elif(e1 < e2):
+            sign = 1
 
-    return phi
+        phi = numpy.arcsin(float(sign * numpy.linalg.norm(crossProduct)/ \
+            (lineProjMag * directionMag)))
+
+        return phi
+    else:
+        return 0
 
 
 # This object defines a world point, which is an x, y, z coordinate in the ECEF
@@ -500,6 +513,10 @@ class Worker(QObject):
         first = 1
         quality = 0
         listBeginning = WorldPoint(0,0,0,True)
+        lastError = 0
+        kX = 1.5/5
+        kPhi = 5.5/5
+        thirdPosCount = 0
 
         global newPost
         global pl1ToCalc
@@ -519,9 +536,12 @@ class Worker(QObject):
                 retry = False
             except serial.SerialException:
                 serialNumber = serialNumber + 1
-                if(serialNumber > 5):
+                if(serialNumber > 0):
                     raise serial.SerialException('Unable to connect to GPS.  Check the serial connection.')
                 print('trying /dev/ttyACM'+str(serialNumber))
+
+        arduino = serial.Serial(port = '/dev/ttyACM1', baudrate=115200,\
+            bytesize=8, timeout=10, stopbits=serial.STOPBITS_ONE, write_timeout=0)
 
         f = open("fencePosts.txt", "a")
 
@@ -588,6 +608,8 @@ class Worker(QObject):
                 effort = 0 #- for turning left + for turning right
                 kp = 0 #unused for now
                 x, y, z, quality = updatePosition(gps)
+                #thirdPosCount = thirdPosCount + 1
+                #print(thirdPosCount)
                 points, success = localScene.calcSceneLocalCoordinates(x,y,z)
                 if(not success):
                     raise Exception('Local world coordinate calculation unsuccessful')
@@ -630,28 +652,51 @@ class Worker(QObject):
 
                 rowNum = round(actualValue / offset)
                 #print("rowNum")
-                print(rowNum)
+                #print(rowNum)
 
                 # this is a simple calculation for our desired distance
                 # from the original plane
+                rowNum = 0
                 desiredValue = sideOfLine * offset * rowNum
+                print("desiredValue")
+                print(desiredValue)
 
 
                 # this is our 3D earth-referenced velocity vector projected onto
                 # a plane tangent to the WGS84 ellipse at our current lat/long
                 v1, v2, v3 = calcVelocity(a,b,xlast,ylast,zlast,x,y,z, mpf(time.time() - velTimer))
                 velTimer = time.time()
-                xlast = x
-                ylast = y
-                zlast = z
-
-                phi = calcDirAndNormalProjection(a,b,xlast,ylast,zlast,x,y,z,pl1,pl2,pl3)
-
-                print(phi)
 
                 # no need for direction unit vector, because we only care about sign
                 directionSign = initDirV1 * v1 + initDirV2 * v2 + initDirV3 * v3
                 error = mpf(desiredValue) - actualValue
+                print("error:")
+                print(error)
+                
+                phi = calcDirAndNormalProjection(a,b,xlast,ylast,zlast,x,y,z,pl1,pl2,pl3,lastError,error)
+                print("phi")
+                print(phi)
+                lastError = error
+                xlast = x
+                ylast = y
+                zlast = z
+
+                steeringAngle = kX * error + kPhi * phi
+                if(steeringAngle > 0.34):
+                    steeringAngle = 0.34
+                if(steeringAngle < -0.34):
+                    steeringAngle = -0.34
+
+
+                #~40 deg per steering wheel rev
+                #~20 deg per motor rev
+                #x deg at wheels x/40 * 360 deg at steering wheel
+                #x deg at wheels x/40 * 360 * 2 deg at motor
+                steeringAngle = (str(int(steeringAngle * 360 / (2 * 3.14) * 720 / 40))+'\n').encode('latin-1')
+                print("steeringAngle")
+                print(steeringAngle)
+
+                arduino.write(steeringAngle)
 
                 distFromPrev = math.sqrt((x-prevXPost)**2 + (y-prevYPost)**2 + (z-prevZPost)**2)
 
@@ -680,6 +725,7 @@ class Worker(QObject):
         print("At end of thread")
         keepRunning = False
         gps.close()
+        arduino.close()
         self.finished.emit()
 
 
