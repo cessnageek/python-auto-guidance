@@ -514,15 +514,49 @@ class Worker(QObject):
         quality = 0
         listBeginning = WorldPoint(0,0,0,True)
         lastError = 0
-        kX = 0.25
-        kPhi = 0.65
-        kD = 0.03#0.13/4*1.3
-        kDPhi = 0.1
+
+        #Values work at 1.4 MPH
+        ''' kX = 1.8/4*1.2
+        kPhi = 1.5/4*1.35
+        kD = 0#0.2/4*1.3
+        kDPhi = 1.1/40*1.8
+        kIX = 1.8/180*1.2
+        '''
+        #Values work at 2 MPH
+        '''
+        kX = 0.54*1
+        kPhi = 0.50625*1
+        kD = 0.035#0.2/4*1.3
+        kDPhi = 0.0495*2.5
+        kIX = 0.012*0.55
+        '''
+
+        #Sort of works at 2.5 MPH
+        '''
+        kX = 0.54*0.8
+        kPhi = 0.50625*0.8
+        kD = 0.035*5
+        kDPhi = 0.0495*5#3.7
+        kIX = 0.012*0.38
+        intX = 0
+        '''
+
+        kX = 1.35/4*1
+        kPhi = 15/50*1
+        kD = 0.13/4*1
+        kDPhi = 0.13/4*1.1
+        kIX = 0.012*1
+        intX = 0
+        kXPhi = 0.012*0.75
+
+
+
         thirdPosCount = 0
 
         wheelAngle = 0
 
         lastPhi = 0
+        lastPhiActual = 0
 
         every4Phi = 0
         every4X = 0
@@ -533,7 +567,9 @@ class Worker(QObject):
 
         steeringOffset = 0
 
+        deltaSteeringAngle = 0
         steeringAngle = 0
+
 
         global newPost
         global pl1ToCalc
@@ -557,7 +593,7 @@ class Worker(QObject):
                     raise serial.SerialException('Unable to connect to GPS.  Check the serial connection.')
                 print('trying /dev/ttyACM'+str(serialNumber))
 
-        arduino = serial.Serial(port = '/dev/ttyACM1', baudrate=9600,\
+        arduino = serial.Serial(port = '/dev/ttyACM1', baudrate=115200,\
             bytesize=8, timeout=10, stopbits=serial.STOPBITS_ONE, write_timeout=0)
 
         f = open("fencePosts.txt", "a")
@@ -693,7 +729,8 @@ class Worker(QObject):
                 #print("error:")
                 #print(error)
                 
-                phi = calcDirAndNormalProjection(a,b,xlast,ylast,zlast,x,y,z,pl1,pl2,pl3,lastError,error)
+                phiActual = calcDirAndNormalProjection(a,b,xlast,ylast,zlast,x,y,z,pl1,pl2,pl3,lastError,error)
+                phi = (phiActual + lastPhiActual)/2
                 #phiArr[phiIndex] = phi
                 #phiIndex = phiIndex + 1
                 #if(phiIndex >= numPhi):
@@ -728,22 +765,34 @@ class Worker(QObject):
                 #print("phi")
                 #print(phi)
 
+                if(velMagnitude > 5.5 and abs(abs(wheelAngle)-abs(steeringAngle *180/3.14*27.5/720) > 10)): #ft/s, degrees
+                    steeringOffset = steeringAngle * 180/3.14 * 27.5 / 720 - sign(steeringAngle) * abs(wheelAngle)
+                    print("updated offset")
 
-                if(abs(error) > 2):
-                    kPhiCorrected = 0
-                else:
-                    kPhiCorrected = kPhi
-                steeringAngle = kX * error + kPhiCorrected * phi + kD * (error - lastError) + kDPhi * (phi - lastPhi)
-                if(steeringAngle > 0.3):
-                    steeringAngle = 0.3
-                if(steeringAngle < -0.3):
-                    steeringAngle = -0.3
+                #deltaAteeringAngle = kX * error + kPhiCorrected * phi + kD * (error - lastError)
+
+                intX = intX + (kXPhi * error + phi)
+                steeringAngle = kX * error + kPhi * phi #+ kIX * intX
+                deltaSteeringAngle = kD * (error - lastError) + kDPhi * (phi - lastPhi)
+
+                '''
+                if(deltaSteeringAngle > 0.09):
+                    deltaSteeringAngle = 0.09
+                if(deltaSteeringAngle < -0.09):
+                    deltaSteeringAngle = -0.09
+                '''
+                if(steeringAngle > 0.25):
+                    steeringAngle = 0.25
+                if(steeringAngle < -0.25):
+                    steeringAngle = -0.25
+                steeringAngle = steeringAngle + kIX * intX
         
                 #~27.5 deg per steering wheel rev
                 #~13.75 deg per motor rev
                 #x deg at wheels x/27.5 * 360 deg at steering wheel
                 #x deg at wheels x/27.5 * 360 * 2 deg at motor
-                steeringAngleStr = (str(float(steeringAngle*180/3.1415))+'\n').encode('latin-1')
+                #steeringAngleStr = (str(int(((steeringAngle * 180 / 3.14) + steeringOffset) * 720 / 27.5))+'\n').encode('latin-1')
+                steeringAngleStr = (str(int(steeringAngle * 180 / 3.14 * 720 / 27.5))+'\n').encode('latin-1')
                 print("steeringAngle")
                 print(steeringAngleStr)
                 print("steeringOffset")
@@ -767,6 +816,8 @@ class Worker(QObject):
 
                 lastError = error
                 lastPhi = phi
+                lastPhiActual = phiActual
+
                 xlast = x
                 ylast = y
                 zlast = z
