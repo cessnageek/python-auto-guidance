@@ -1,5 +1,9 @@
 #!/usr/bin/env python3 -i
 
+# Ryley Hindman, 2021-2022
+# This is the main autotrac file.
+
+## Import Statements
 from PyQt5 import QtGui
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
@@ -26,6 +30,8 @@ import copy
 from threading import Lock
 from queue import Queue
 
+## Global Variable Initialization
+
 data_lock = Lock()
 quit_lock = Lock()
 point_lock = Lock()
@@ -40,6 +46,11 @@ keepRunning = True
 pointButtonPushed = False
 fileQueue = Queue()
 
+## Function: sign(x)
+# This function returns:
+# 1 if the input x is larger than 0
+# 0 if the input x equals 0
+# -1 if the input x is smaller than 0
 def sign(x):
     if(x > 0):
         return 1
@@ -48,6 +59,7 @@ def sign(x):
     elif(x < 0):
         return -1
 
+## Function: addToQueue(x,y,z,lat,longi)
 #Add x,y,z,lat,longi to the fileQueue to put
 #the values into the file
 def addToQueue(x, y, z, lat, longi):
@@ -55,29 +67,25 @@ def addToQueue(x, y, z, lat, longi):
     #print("Adding to queue")
     fileQueue.put((x,y,z,lat,longi))
 
-#Hysteresis object.  Returns the value based on
-#the previous value.  If the difference between
-#the current value and the previous value is greater
-#than the hystersis, it updates the value.
-class hysteresis():
-    def __init__(self, hyst):
-        self.value = 0
-        self.hyst = hyst
-
-    def getValue(self, value):
-        if(abs(value - self.value) > self.hyst):
-            self.value = value
-        return self.value
-
+## Class: fileWorker(QObject)
+# This class encapsulates the file reading and writing for saving the track
+# log.
 class fileWorker(QObject):
     global fileQueue
     finished = pyqtSignal()
 
+    ## Function: runFileWorker(self)
+    # This function is called once on the file save thread intialization.  It then
+    # enters the infinite loop until the main thread requests a shutdown.
     def runFileWorker(self):
+        # Need to clean up this run variable.  There is a run variable used in
+        # the main loop, and I think it is for a different purpose.
         run = True
         self.openFileWrite('saveFile.txt')
         print("Opened file")
         while(run):
+            # If the interuption is requested from the main thread, this will
+            # attempt a clean shutdown of the file worker.
             if(QThread.currentThread().isInterruptionRequested()):
                 run = False
                 print("Interrupted")
@@ -92,18 +100,28 @@ class fileWorker(QObject):
             
         self.closeFile()
 
+    ## Function: openFileRead(self, named)
+    # This function opens a save file to read.  It ensures that the filename
+    # ends with the .txt extension.
     def openFileRead(self, name):
         if(not name[-4:] == '.txt'):
             raise ReferenceError("Filename must end in \'.txt\'")
         self.saveFile = open(name, "r")
         print("Opened file read")
 
+    ## Function: openFileWrite(self, name)
+    # This function opens a save file to write.  It ensures that the filename
+    # ends with the .txt extension.
     def openFileWrite(self, name):
         if(not name[-4:] == '.txt'):
             raise ReferenceError("Filename must end in \'.txt\'")
         self.saveFile = open(name, "w")
         print("Opened file write")
 
+    ## Function commitToFile(self, data)
+    # This function commits the array 'data' to the currently open file.  There
+    # is no protection for a non-opened save file, so there is a possibility for
+    # an exception to be thrown here.
     def commitToFile(self,data):
         if(not len(data) == 5):
             raise ReferenceError("Data length is not 5")
@@ -119,13 +137,21 @@ class fileWorker(QObject):
         self.saveFile.write(str(data[4]))
         self.saveFile.write('\n')
 
+    ## Function closeFile(self)
+    # This function closes the currently open text file.  There is no protection
+    # for a non-opened save file, so there is a possibility for an exception to
+    # be thrown here.
     def closeFile(self):
         self.saveFile.close()
         print("Closed file")
 
-#This function calculates if the line defined by
-#(p1x,p1y) -> (p2x,p2y) intersects the line defined
-#by (x1,y1) -> (x2,y2).
+
+## Function: doesIntersect(x1,y1,x2,y2,p1x,p1y,p2x,p2y)
+# This function calculates if the line defined by
+# (p1x,p1y) -> (p2x,p2y) intersects the line defined
+# by (x1,y1) -> (x2,y2).
+# Currently, this function is unused, but could potentially be used to improve
+# the graphics rendering efficiency.  It has not been tested.
 def doesIntersect(x1,y1,x2,y2,p1x,p1y,p2x,p2y):
     if((p1x == p2x and p1y == p2y) or (x1 == x2 and y1 == y2)):
         return False
@@ -155,6 +181,12 @@ def doesIntersect(x1,y1,x2,y2,p1x,p1y,p2x,p2y):
     else:
         return True
 
+## Function: doesIntersectRect(x1,y1,x2,y2,x3,y3,x4,y4,p1x,p1y,p2x,p2y)
+# This function determines if the line defined by (p1x,p1y) -> (p2x,p2y)
+# intersects the rectangle defined by (x1,y1)->(x2,y2)->(x3,y3)->(x4,y4).
+# Returns True if the input line intersects the rectangle.
+# Returns False if the input line does not intersect the rectangle.
+# Requres doesIntersect() to work.
 def doesIntersectRect(x1,y1,x2,y2,x3,y3,x4,y4,p1x,p1y,p2x,p2y):
     if(doesIntersect(x1,y1,x2,y2,p1x,p1y,p2x,p2y)):
         return True
@@ -166,6 +198,10 @@ def doesIntersectRect(x1,y1,x2,y2,x3,y3,x4,y4,p1x,p1y,p2x,p2y):
         return True
     return False
 
+## Function: getNMEA(gps)
+# This function takes a gps input as a Serial object.  It then flushes the 
+# input buffer, and waits for the whole GNGGA or GPGGA string to arrive.
+# The function returns the string ending with GNGGA or GPGGA.
 def getNMEA(gps):
     gps.flushInput()
     gpggaFound = False
@@ -184,6 +220,11 @@ def getNMEA(gps):
             endOfGPGGA = True
     return ''.join(outStrChars)
 
+## Function: calcDist(x,y,z,v1,v2,v3)
+# This function takes in an (x,y,z) position vector and a (v1,v2,v3) direction 
+# vector.  It then calculates the length of (x,y,z) projected along(v1,v2,v3)
+# from the origiin of (v1,v2,v3).  The use case is in the main loop, where we
+# are calculating the distance from the plane.
 def calcDist(x,y,z,v1,v2,v3):
     if(not(v1 == 0 and v2 == 0 and v3 == 0)):
         dist = mpf(-(x * v1 + y * v2 + z * v3)/mpf(mp.sqrt(mp.power(v1,2) +\
@@ -192,6 +233,9 @@ def calcDist(x,y,z,v1,v2,v3):
         dist = 0
     return dist
 
+## Function: getECEF(lat,longi,height)
+# This function uses the ECEF conversion functions to get earth-centered
+# earth-fixed coordinates from the latitude, longitude, and height data.
 def getECEF(lat,longi,height):
     latd = mp.radians(lat)
     longd = mp.radians(longi)
@@ -204,6 +248,10 @@ def getECEF(lat,longi,height):
     zOut = mpf(((mp.power(b,2) * N / mp.power(a,2)) + height) * mp.sin(latd))
     return xOut, yOut, zOut
 
+## Function: parseNMEA(inputStr)
+# This function takes an inputStr argument and parses it into the latitude,
+# longitude, and height data.  It also provides the precision of the input
+# data in the qualOut variable.
 def parseNMEA(inputStr):
     GPGGAref = inputStr.rfind('$GNGGA')
     latOut = 0
@@ -261,6 +309,10 @@ def parseNMEA(inputStr):
     #print("Lat: " + str(latOut) + " Long: " + str(longOut))
     return latOut, longOut, qualOut, altOut, geoidSepOut
 
+## Function updatePosition(gps)
+# This function takes a gps Serial object as an input.  It then gets the NMEA
+# data from this gps input, parses it, and then returns the x,y,z values
+# from the ECEF converting function, as well as the GPS precision
 def updatePosition(gps):
     inputNMEA = getNMEA(gps)
     lat,longi,qual,alt,geoidSep = parseNMEA(inputNMEA)
@@ -273,6 +325,9 @@ def updatePosition(gps):
         x,y,z = getECEF(lat, longi, height)
     return mpf(x),mpf(y),mpf(z),qual
 
+## Function calcPlaneThroughOrigin(x1,y1,z1,x2,y2,z2)
+# This function calculates a plane through point (x1,y1,z1) and (x2,y2,z2) and
+# the origin of the world.  It then returns a normal vector to this plane.
 def calcPlaneThroughOrigin(x1,y1,z1,x2,y2,z2):
     #initial cross final position.  Normal points to
     # the right of the initial direction of travel
