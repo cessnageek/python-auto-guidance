@@ -105,6 +105,9 @@ int sign(float input) {
 
 void loop() {
 
+  //Verify the current steering angle and the desired steering angle refer
+  //to the same thing - either motor or axle angle.
+
   currentSteeringAngle = (currentSteeringAngle + (230-analogRead(0))*27.5/79)/2;
   
   if(Serial.available() > 0) {
