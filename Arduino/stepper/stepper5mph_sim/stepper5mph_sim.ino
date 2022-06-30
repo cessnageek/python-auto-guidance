@@ -67,6 +67,8 @@ float desiredSteeringAngle = 0;
 unsigned long lastTime = 0;
 int setSpeedPeriodMillis = 50;
 
+unsigned long lastMillis = 0;
+
 void setup() {
   // put your setup code here, to run once:
   pinMode(dirPin, OUTPUT);
@@ -90,7 +92,7 @@ void setup() {
   // set TIMSK1 to 00000010
   TIMSK1 = 2;
 
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   sei();
 }
@@ -103,28 +105,28 @@ int sign(float input) {
   }
 }
 
+void serialFlush() {
+  while(Serial.available() > 0) {
+    Serial.read();
+  }
+}
+
 void loop() {
-
-  //currentSteeringAngle = (currentSteeringAngle + (230-analogRead(0))*27.5/79)/2;
   currentSteeringAngle = currentPos*0.038194;
-  Serial.println(currentSteeringAngle);
-  if(Serial.available() > 0) {
-    //targetPos = Serial.parseFloat(SKIP_ALL);
-    char rc = Serial.read();
-
-    if (rc != endMarker) {
-      receivedChars[inputPos] = rc;
-      inputPos++;
-      if(inputPos >= numInputChars) {
-        inputPos = numInputChars - 1;
-      }
-    }
-    else {
-      receivedChars[inputPos] = '\0';
-      inputPos = 0;
-      ///targetPos = atoi(receivedChars);
-      desiredSteeringAngle = atof(receivedChars);
-    }
+  
+  if(Serial.available()) {
+    String desiredSteeringAngleInput = Serial.readStringUntil('\n');
+    desiredSteeringAngle = (float)(desiredSteeringAngleInput.toInt())/1000;
+    
+  }
+    
+  if(millis() - lastMillis > 100) {
+    Serial.println((int)(currentSteeringAngle*1000));
+    //Serial.print('H');
+    //Serial.write(intCurrentSteeringAngle & 0xFF);
+    //Serial.write((intCurrentSteeringAngle >> 8) & 0xFF);
+    //Serial.print('\n');
+    lastMillis = millis();
   }
 
   //if(millis() - lastTime > setSpeedPeriodMillis){
