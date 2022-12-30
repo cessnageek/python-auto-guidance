@@ -90,7 +90,7 @@ void setup() {
   // set TIMSK1 to 00000010
   TIMSK1 = 2;
 
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   sei();
 }
@@ -103,11 +103,20 @@ int sign(float input) {
   }
 }
 
+unsigned long lastMillis = 0;
+unsigned long currMillis = 0;
+
 void loop() {
 
   //currentSteeringAngle = (currentSteeringAngle + (230-analogRead(0))*27.5/79)/2;
+  currMillis = millis();
   currentSteeringAngle = currentPos*0.038194;
-  Serial.println(currentSteeringAngle);
+  if(currMillis - lastMillis > 100) {
+    Serial.print(String(currentSteeringAngle,3));
+    Serial.print('\n');
+    lastMillis = currMillis;
+  }
+
   if(Serial.available() > 0) {
     //targetPos = Serial.parseFloat(SKIP_ALL);
     char rc = Serial.read();

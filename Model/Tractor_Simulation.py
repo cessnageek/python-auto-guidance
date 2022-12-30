@@ -27,6 +27,7 @@ xs = []
 ts = []
 
 data_lock = Lock()
+network_lock = Lock()
 
 
 #desiredWheelAngle = 20000
@@ -35,15 +36,17 @@ global runKinematics
 global setXVal
 global connect
 global connectAddr
+global resetFlag
 
 runKinematics = True
 setXVal = 0
 connect = False
 connectAddr = "192.168.1.100"
+resetFlag = False
 
 lastTimeMain = time.time()
 
-wheelAngle = np.int16(-1)
+wheelAngle = np.int16(0)
 
 
 #stepperDriver = serial.Serial(port = ('COM3'),baudrate=115200,\
@@ -121,6 +124,10 @@ class position:
 		self.planeNorm = self.getPlaneNormal(self.initX,self.initY,self.initZ)
 		self.transform = [[0,0,0],[0,0,0],[0,0,0]]
 		self.getBasis()
+
+	def reset(self):
+		self.xVal = 0
+		self.phiVal = 0
 
 	def setSpeed(self, speed):
 		self.vel = speed
@@ -208,7 +215,9 @@ class position:
 		longi = mp.atan2(self.Y, self.X)
 		return mp.degrees(lat),mp.degrees(longi),h
 
-tractorPos = position(1.72, 0.4, 2.3)
+tractorPos = position(1.72, 0.4, 1)
+#tractorPos = position(1.72, 0.4, 0.5)
+
 
 tractorController = controller(-0.12, 0.6, -0.05, 0.1)
 
@@ -232,6 +241,9 @@ class Ui_MainWindow(QMainWindow):
 		self.runButton = QtWidgets.QPushButton(self.centralwidget)
 		self.runButton.setGeometry(QtCore.QRect(10, 490, 171, 41))
 		self.runButton.setObjectName("runButton")
+		self.resetButton = QtWidgets.QPushButton(self.centralwidget)
+		self.resetButton.setGeometry(QtCore.QRect(10, 437, 171, 41))
+		self.resetButton.setObjectName("resetButton")
 		self.xValue = QtWidgets.QPlainTextEdit(self.centralwidget)
 		self.xValue.setGeometry(QtCore.QRect(10, 110, 131, 31))
 		self.xValue.setObjectName("xValue")
@@ -258,6 +270,7 @@ class Ui_MainWindow(QMainWindow):
 		self.connectButton.clicked.connect(self.connectButtonClicked)
 		self.setXButton.clicked.connect(self.setXButtonClicked)
 		self.runButton.clicked.connect(self.runButtonClicked)
+		self.resetButton.clicked.connect(self.resetButtonClicked)
 
 	def connectButtonClicked(self):
 		global connect
@@ -279,6 +292,12 @@ class Ui_MainWindow(QMainWindow):
 		runKinematics = not(runKinematics)
 		data_lock.release()
 
+	def resetButtonClicked(self):
+		global resetFlag
+		data_lock.acquire()
+		resetFlag = True
+		data_lock.release()
+
 
 	def retranslateUi(self, MainWindow):
 		_translate = QtCore.QCoreApplication.translate
@@ -288,6 +307,7 @@ class Ui_MainWindow(QMainWindow):
 		self.runButton.setText(_translate("MainWindow", "Run"))
 		self.xValue.setPlainText(_translate("MainWindow", "0"))
 		self.setXButton.setText(_translate("MainWindow", "Set X"))
+		self.resetButton.setText(_translate("MainWindow", "Reset"))
 
 	def runMainTask(self):
 		self.thread = QThread()
@@ -301,6 +321,35 @@ class Ui_MainWindow(QMainWindow):
 
 		self.thread.start()
 
+	def runNetworkingTask(self):
+		self.networkThread = QThread()
+		self.networkWorker = networkWorker()
+		self.networkWorker.moveToThread(self.networkThread)
+
+		self.networkThread.started.connect(self.networkWorker.runMainLoop)
+
+		self.networkThread.start()
+
+class networkWorker(QObject):
+	def runMainLoop(self):
+		global wheelAngle
+		wheelAngleSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		myAddr = ('192.168.1.138',5005)
+		wheelAngleSock.bind(myAddr)
+
+		while(True):
+			wheelAngleBytes = wheelAngleSock.recvfrom(15)
+			wheelAngleStr = wheelAngleBytes[0].decode('latin-1').strip()
+			if(not(wheelAngleStr == '')):
+				last = wheelAngle
+				network_lock.acquire()
+				try:
+					wheelAngle = np.radians(float(wheelAngleStr))
+				except:
+					wheelAngle = last
+				print(wheelAngle)
+				network_lock.release()
+
 
 class Worker(QObject):
 
@@ -310,6 +359,8 @@ class Worker(QObject):
 		global setXVal
 		global connect
 		global connectAddr
+		global wheelAngle
+		global resetFlag
 		data_lock.acquire()
 		lastSetX = setXVal
 		localConnectAddr = connectAddr
@@ -317,16 +368,26 @@ class Worker(QObject):
 		outSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		serverAddress = (localConnectAddr,9999)
 
-
 		while(True):
 			data_lock.acquire()
 			localRunKin = runKinematics
 			localSetXVal = setXVal
 			localConnect = connect
 			localConnectAddr = connectAddr
+			localResetFlag = resetFlag
+			resetFlag = False
 			data_lock.release()
 
-			wheelAngle = 0
+			network_lock.acquire()
+			if(localResetFlag):
+				wheelAngle = 0
+				localWheelAngle = 0
+			else:
+				localWheelAngle = wheelAngle
+			network_lock.release()
+			#print('wheelAngle')
+			#print(localWheelAngle)
+
 			if(not(localSetXVal == lastSetX)):
 				tractorPos.setX(localSetXVal)
 
@@ -334,22 +395,25 @@ class Worker(QObject):
 				localConnect = not(localConnect)
 				serverAddress = (localConnectAddr,9999)
 
+			if(localResetFlag):
+				tractorPos.reset()
+				localResetFlag = False
 			tractorPos.runKinematics(wheelAngle,localRunKin)
 			curLat,curLongi,curAlt = tractorPos.convertToLatLongAlt()
 			self.currTimeMain = time.time()
-			if self.currTimeMain-self.lastTimeMain > 0.5:
+			if self.currTimeMain-self.lastTimeMain > 0.1:
 
 				#exportDesiredWheelAngle(tractorController.steeringAngle*18000/3.1415)
 				outStr = "$GNGGA,-," + str(curLat) + ",N," + str(abs(curLongi)) + ",W,4," + "0,0," + str(curAlt) + ",0,0,0,0,$"
 				numBytes = outSock.sendto(bytes(outStr,'utf-8'), serverAddress)
-				print("sent " + str(numBytes) + " bytes.")
-				print(outStr)
-				print('x')
-				print(tractorPos.X)
-				print('y')
-				print(tractorPos.Y)
-				print('z')
-				print(tractorPos.Z)
+				#print("sent " + str(numBytes) + " bytes.")
+				#print(outStr)
+				#print('x')
+				#print(tractorPos.X)
+				#print('y')
+				#print(tractorPos.Y)
+				#print('z')
+				#print(tractorPos.Z)
 				self.lastTimeMain = self.currTimeMain
 			lastSetX = localSetXVal
 
@@ -359,6 +423,7 @@ App = QApplication(sys.argv)
 window = Ui_MainWindow()
 window.setupUi(window)
 window.runMainTask()
+window.runNetworkingTask()
 
 keepRunning = 1
 while(keepRunning):
