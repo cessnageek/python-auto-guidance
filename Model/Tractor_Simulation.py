@@ -41,7 +41,7 @@ global resetFlag
 runKinematics = True
 setXVal = 0
 connect = False
-connectAddr = "192.168.1.100"
+connectAddr = "192.168.86.33"
 resetFlag = False
 
 lastTimeMain = time.time()
@@ -215,7 +215,7 @@ class position:
 		longi = mp.atan2(self.Y, self.X)
 		return mp.degrees(lat),mp.degrees(longi),h
 
-tractorPos = position(1.72, 0.4, 1)
+tractorPos = position(1.72, 0.4, 10)
 #tractorPos = position(1.72, 0.4, 0.5)
 
 
@@ -302,7 +302,7 @@ class Ui_MainWindow(QMainWindow):
 	def retranslateUi(self, MainWindow):
 		_translate = QtCore.QCoreApplication.translate
 		MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
-		self.ipAddress.setPlainText(_translate("MainWindow", "192.168.1.100"))
+		self.ipAddress.setPlainText(_translate("MainWindow", "192.168.86.39"))
 		self.connectButton.setText(_translate("MainWindow", "Connect"))
 		self.runButton.setText(_translate("MainWindow", "Run"))
 		self.xValue.setPlainText(_translate("MainWindow", "0"))
@@ -334,7 +334,7 @@ class networkWorker(QObject):
 	def runMainLoop(self):
 		global wheelAngle
 		wheelAngleSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		myAddr = ('192.168.1.138',5005)
+		myAddr = ('192.168.86.37',5005)
 		wheelAngleSock.bind(myAddr)
 
 		while(True):

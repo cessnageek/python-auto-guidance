@@ -11,6 +11,8 @@ from PyQt5.Qt import Qt
  
 import numpy
 
+import socket
+
 from mpmath import *
 mp.dps = 20
 print(mp)
@@ -29,6 +31,7 @@ from queue import Queue
 data_lock = Lock()
 quit_lock = Lock()
 point_lock = Lock()
+arduino_lock = Lock()
 
 newPost = False
 pl1ToCalc = 0
@@ -38,6 +41,7 @@ newplToCalc = False
 quit = False
 keepRunning = True
 pointButtonPushed = False
+endRowTurnaround = False
 fileQueue = Queue()
 
 def sign(x):
@@ -123,6 +127,35 @@ class fileWorker(QObject):
         self.saveFile.close()
         print("Closed file")
 
+class networkingWorker(QObject):
+    def runNetworkingWorker(self):
+        global arduino
+        kinematicsSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        kinematicsAddress = ("192.168.86.37",5005)
+
+        while(True):
+            in_waiting = 0
+            try:
+                arduino_lock.acquire()
+                in_waiting = arduino.in_waiting
+                arduino_lock.release()
+                if(in_waiting > 7):
+                    arduino_lock.acquire()
+                    arduino.readline()
+                    currWheelAngleBytes = arduino.readline()
+                    arduino.reset_input_buffer()
+                    arduino_lock.release()
+    
+                    #print('wheel angle')
+                    #print(currWheelAngleBytes)
+                    numBytes = kinematicsSocket.sendto(currWheelAngleBytes, kinematicsAddress)
+                    #print('numBytes')
+                    #print(numBytes)
+            except: #arduino hasn't been defined by other thread yet.
+                arduino_lock.release()
+
+            time.sleep(0.01)    
+
 #This function calculates if the line defined by
 #(p1x,p1y) -> (p2x,p2y) intersects the line defined
 #by (x1,y1) -> (x2,y2).
@@ -167,22 +200,25 @@ def doesIntersectRect(x1,y1,x2,y2,x3,y3,x4,y4,p1x,p1y,p2x,p2y):
     return False
 
 def getNMEA(gps):
-    gps.flushInput()
-    gpggaFound = False
-    endOfGPGGA = False
-    outStrChars = []
-    while(not endOfGPGGA):
-        end = len(outStrChars)-1
-        outStrChars.append(gps.read(1).decode('utf-8'))
-        if(len(outStrChars) > 4 and (outStrChars[end] == 'A')):
-               if(outStrChars[end-1] == 'G'):
-                   if(outStrChars[end-2] == 'G'):
-                       if(outStrChars[end-3] == 'P' or outStrChars[end-3] == 'N'):
-                           if(outStrChars[end-4] == 'G'):
-                               gpggaFound = True; 
-        if(gpggaFound and outStrChars[end] == '$'):
-            endOfGPGGA = True
-    return ''.join(outStrChars)
+    #gps.flushInput()
+    #gpggaFound = False
+    #endOfGPGGA = False
+    #outStrChars = []
+    #while(not endOfGPGGA):
+    #    end = len(outStrChars)-1
+    #    outStrChars.append(gps.read(1).decode('utf-8'))
+    #    if(len(outStrChars) > 4 and (outStrChars[end] == 'A')):
+    #           if(outStrChars[end-1] == 'G'):
+    #               if(outStrChars[end-2] == 'G'):
+    #                   if(outStrChars[end-3] == 'P' or outStrChars[end-3] == 'N'):
+    #                       if(outStrChars[end-4] == 'G'):
+    #                           gpggaFound = True; 
+    #    if(gpggaFound and outStrChars[end] == '$'):
+    #        endOfGPGGA = True
+    #return ''.join(outStrChars)
+    inputStr = gps.recvfrom(350)
+    #print(inputStr)
+    return inputStr[0].decode('utf-8')
 
 def calcDist(x,y,z,v1,v2,v3):
     if(not(v1 == 0 and v2 == 0 and v3 == 0)):
@@ -202,20 +238,33 @@ def getECEF(lat,longi,height):
     xOut = mpf((N + height) * mp.cos(latd) * mp.cos(longd))
     yOut = mpf((N + height) * mp.cos(latd) * mp.sin(longd))
     zOut = mpf(((mp.power(b,2) * N / mp.power(a,2)) + height) * mp.sin(latd))
+    #print('XXXXX')
+    #print(xOut)
+    #print('YYYYY')
+    #print(yOut)
+    #print('ZZZZZ')
+    #print(zOut)
     return xOut, yOut, zOut
 
 def parseNMEA(inputStr):
+    #print(inputStr)
     GPGGAref = inputStr.rfind('$GNGGA')
     latOut = 0
     longOut = 0
     qualOut = 0
     geoidSepOut = 0
     if(GPGGAref != -1):
-        inputStr = inputStr[GPGGAref+1:len(inputStr)-1]
+        inputStr = inputStr[GPGGAref+1:len(inputStr)]
         endDelim = inputStr.find('$')
+        #print('inputStr')
+        #print(inputStr)
+        #print('endDelim')
+        #print(endDelim)
         if(endDelim != -1):
             inputStr = inputStr[0:endDelim]
             data = inputStr.split(',')
+            #print('data')
+            #print(data)
             if(len(data) == 15):
                 latStr = data[2]
                 latDir = data[3]
@@ -228,23 +277,27 @@ def parseNMEA(inputStr):
                     latDMS = mpf(latStr)
                     latDeg = mp.floor(latDMS) * -0.01
                     latMinutes = latDMS - (latDeg * 100)
-                    latOut = mpf(latDeg - (latMinutes / 60))
+                    #latOut = mpf(latDeg - (latMinutes / 60))
+                    latOut = latDeg
                 else:
                     latDMS = mpf(latStr)
                     latDeg = mp.floor(latDMS) * 0.01
                     latMinutes = latDMS - (latDeg * 100)
-                    latOut = mpf(latDeg + (latMinutes / 60))
+                    #latOut = mpf(latDeg + (latMinutes / 60))
+                    latOut = latDMS
 
                 if(longDir == 'W'):
                     longDMS = mpf(longStr)
                     longDeg = mp.floor(longDMS) * -0.01
                     longMinutes = longDMS - (longDeg * 100)
-                    longOut = mpf(longDeg - (longMinutes / 60))
+                    #longOut = mpf(longDeg - (longMinutes / 60))
+                    longOut = longDMS*-1
                 else:
                     longDMS = mpf(longStr)
                     longDeg = mp.floor(longDMS) * 0.01
                     longMinutes = longDMS - (longDeg * 100)
-                    longOut = mpf(longDeg + (longMinutes / 60))
+                    #longOut = mpf(longDeg + (longMinutes / 60))
+                    longOut = longDeg
 
                 qualOut = float(qualStr)
                 altOut = float(altStr)
@@ -264,6 +317,16 @@ def parseNMEA(inputStr):
 def updatePosition(gps):
     inputNMEA = getNMEA(gps)
     lat,longi,qual,alt,geoidSep = parseNMEA(inputNMEA)
+    #print('lat')
+    #print(lat)
+    #print('long')
+    #print(longi)
+    #print('qual')
+    #print(qual)
+    #print('alt')
+    #print(alt)
+    #print('geoidSep')
+    #print(geoidSep)
     #print("Latitude: ")
     #print(lat)
     #print("Longitude: ")
@@ -500,7 +563,7 @@ class Worker(QObject):
         pl1 = mpf(0.0)
         pl2 = mpf(0.0)
         pl3 = mpf(0.0)
-        offset = 1.803 # 5ft in meters
+        offset = 10# offset = 1.803 # 5ft in meters
         rowNum = 0 # start on row 0
         rate = 10 # computation rate in hz
         sideOfLine = 1
@@ -520,9 +583,22 @@ class Worker(QObject):
         kDPhi = 0.1
         thirdPosCount = 0
 
+        lastPoints = [[0], [0], [0]]
+
+        mode = 1 #1 = straight track
+        #2 = headland turn
+        #3 = headland
+        #4 = error
+
+        travelDirection = 1 #1 = go to the right of initial track
+        #2 = go tot he lef to initial track
+
+        lineStartY = 0
+        lastRowNum = 0
+
         wheelAngle = 0
 
-        lastPhi = 0
+        lastPhiNormalized = 0
 
         every4Phi = 0
         every4X = 0
@@ -542,23 +618,29 @@ class Worker(QObject):
         global newplToCalc
         global keepRunning
         global pointButtonPushed
+        global endRowTurnaround
+        global arduino
 
-        serialNumber = 0
-        print('trying /dev/ttyACM0')
-        retry = True
-        while(retry):
-            try:
-                gps = serial.Serial(port = ('/dev/ttyACM'+str(serialNumber)), baudrate=9600,\
-                 bytesize=8, timeout=10, stopbits=serial.STOPBITS_ONE)
-                retry = False
-            except serial.SerialException:
-                serialNumber = serialNumber + 1
-                if(serialNumber > 0):
-                    raise serial.SerialException('Unable to connect to GPS.  Check the serial connection.')
-                print('trying /dev/ttyACM'+str(serialNumber))
+        #serialNumber = 0
+        #print('trying /dev/ttyACM0')
+        #retry = True
+        #while(retry):
+        #    try:
+        #        gps = serial.Serial(port = ('/dev/ttyACM'+str(serialNumber)), baudrate=9600,\
+        #         bytesize=8, timeout=10, stopbits=serial.STOPBITS_ONE)
+        #        retry = False
+        #    except serial.SerialException:
+        #        serialNumber = serialNumber + 1
+        #        if(serialNumber > 0):
+        #            raise serial.SerialException('Unable to connect to GPS.  Check the serial connection.')
+        #        print('trying /dev/ttyACM'+str(serialNumber))
 
-        arduino = serial.Serial(port = '/dev/ttyACM1', baudrate=9600,\
+        arduino = serial.Serial(port = '/dev/ttyACM0', baudrate=115200,\
             bytesize=8, timeout=10, stopbits=serial.STOPBITS_ONE, write_timeout=0)
+
+        gpsSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        bindAddress = ("192.168.86.39",9999)
+        gpsSocket.bind(bindAddress)
 
         f = open("fencePosts.txt", "a")
 
@@ -573,7 +655,7 @@ class Worker(QObject):
                 point_lock.acquire()
                 if(pointButtonPushed):
                     if(not firstPos):
-                        x1, y1, z1, quality = updatePosition(gps)
+                        x1, y1, z1, quality = updatePosition(gpsSocket)
                         print("First push")
                         print(str(x1) + " " + str(y1) + " " + str(z1) + " " + str(quality))
                         addToQueue(x1,y1,z1,0,0)
@@ -581,11 +663,12 @@ class Worker(QObject):
                         firstPos = True
                         pointButtonPushed = False
                     elif(not secondPos):
-                        x2, y2, z2, quality = updatePosition(gps)
+                        x2, y2, z2, quality = updatePosition(gpsSocket)
                         print("Second push")
                         pl1, pl2, pl3 = calcPlaneThroughOrigin(x1,y1,z1,x2,y2,z2) # Normal vector to plane through origin
                         addToQueue(x2,y2,z2,0,0)
 
+                        #Calculate normal to ellipse at point 2
                         t = mpf(math.sqrt((a**2 * b**2)/(x2**2 * b**2 + y2**2 * b**2 + z2**2 * a*2)))
                         xEllipse = x2 * t
                         yEllipse = y2 * t
@@ -599,23 +682,25 @@ class Worker(QObject):
                         #Add 0,0,0 and the local coordinates for x2, y2, z2 to our linked list
                         pointsLinkedList = listBeginning.add(WorldPoint(0,0,0,True))
                         points, success = localScene.calcSceneLocalCoordinates(x2,y2,z2)
+                        lineStartY = points[1][0]
                         if(not success):
                             raise Exception('Local world coordinate calculation unsuccessful')
                         pointsLinkedList = pointsLinkedList.add(WorldPoint(points[0][0], points[1][0], points[2][0]))
-                        self.localPointOut.emit(pointsLinkedList)
+                        #self.localPointOut.emit(pointsLinkedList)
+                        self.localPointOut.emit(WorldPoint(points[0][0], points[1][0], points[2][0]))
 
                         secondPos = True
                         pointButtonPushed = False
                     elif(not thirdPos):
                         initDirV1, initDirV2, initDirV3 = calcVelocity(a,b,x1,y1,z1,x2,y2,z2,1)
-                        x3, y3, z3, quality = updatePosition(gps)
+                        x3, y3, z3, quality = updatePosition(gpsSocket)
                         print("Third push")
                         distOff = calcDist(x3,y3,z3,pl1,pl2,pl3)
                         sideOfLine = int(distOff/abs(distOff))
                         thirdPos = True
                         pointButtonPushed = False
                 else:
-                    x, y, z, quality = updatePosition(gps)
+                    x, y, z, quality = updatePosition(gpsSocket)
 
                 point_lock.release()
 
@@ -624,18 +709,26 @@ class Worker(QObject):
                 error = 0
                 effort = 0 #- for turning left + for turning right
                 kp = 0 #unused for now
-                x, y, z, quality = updatePosition(gps)
+                x, y, z, quality = updatePosition(gpsSocket)
                 #thirdPosCount = thirdPosCount + 1
                 #print(thirdPosCount)
                 points, success = localScene.calcSceneLocalCoordinates(x,y,z)
+                print("x")
+                print(points[0][0])
+                print("y")
+                print(points[1][0])
+                print("z")
+                print(points[2][0])
                 if(not success):
                     raise Exception('Local world coordinate calculation unsuccessful')
 
                 pointsLinkedList = pointsLinkedList.add(WorldPoint(points[0][0], points[1][0], points[2][0]))
-                self.localPointOut.emit(pointsLinkedList)
+                #self.localPointOut.emit(pointsLinkedList)
 
                 distFromLast = sqrt((x-lastX)**2 + (y-lastY)**2 + (z-lastZ)**2)
                 if(distFromLast > 0.5):
+                    self.localPointOut.emit(WorldPoint(points[0][0], points[1][0], points[2][0]))
+
                     addToQueue(x,y,z,0,0)
                     lastX = x
                     lastY = y
@@ -652,6 +745,9 @@ class Worker(QObject):
                     pl2 = pl2ToCalc
                     pl3 = pl3ToCalc
                     newplToCalc = False
+                if(endRowTurnaround):
+                    mode = 2
+                    endRowTurnaround = False
                 data_lock.release()
 
                 if(first == 1):
@@ -673,7 +769,6 @@ class Worker(QObject):
 
                 # this is a simple calculation for our desired distance
                 # from the original plane
-                rowNum = 0
                 desiredValue = sideOfLine * offset * rowNum
                 #print("desiredValue")
                 #print(desiredValue)
@@ -682,6 +777,12 @@ class Worker(QObject):
                 # this is our 3D earth-referenced velocity vector projected onto
                 # a plane tangent to the WGS84 ellipse at our current lat/long
                 v1, v2, v3 = calcVelocity(a,b,xlast,ylast,zlast,x,y,z, mpf(time.time() - velTimer))
+                print("v1")
+                print(v1)
+                print("v2")
+                print(v2)
+                print("v3")
+                print(v3)
                 velTimer = time.time()
                 velMagnitude = numpy.sqrt(v1**2 + v2**2 + v3**2)
                 #print("velocity:")
@@ -694,64 +795,116 @@ class Worker(QObject):
                 #print(error)
                 
                 phi = calcDirAndNormalProjection(a,b,xlast,ylast,zlast,x,y,z,pl1,pl2,pl3,lastError,error)
+                phi = -1*math.atan2((points[0][0] - lastPoints[0][0]), (points[1][0] - lastPoints[1][0]))
+                lastPoints = points
                 #phiArr[phiIndex] = phi
                 #phiIndex = phiIndex + 1
                 #if(phiIndex >= numPhi):
                 #    phiIndex = 0
                 #phi = sum(phiArr)/len(phiArr)
-                if(wheelAngleCounter == 4):
-                    wheelAngleCounter = 0
-                    deltaPhi = phi-every4Phi
-                    every4Phi = phi
-                    deltaL = numpy.sqrt((x-every4X)**2 + (y-every4Y)**2 + (z-every4Z)**2)
-                    every4X = x
-                    every4Y = y
-                    every4Z = z
-                    if(deltaPhi == 0):
-                        wheelAngle = 0
-                    else:
-                        #radii[radiiIndex] = deltaL/deltaPhi
-                        #radiiIndex = radiiIndex + 1
-                        #if(radiiIndex >= numRadii):
-                        #    radiiIndex = 0
-                        wheelAngle1 = numpy.arctan(float(1.69/((deltaL/deltaPhi)-(1.33/2)))) * 180 / 3.1415
-                        wheelAngle2 = numpy.arctan(float(1.69/((deltaL/deltaPhi)+(1.33/2)))) * 180 / 3.1415
-                        wheelAngle = (wheelAngle1 + wheelAngle2)/2
-                        print("radius")
-                        print(deltaL/deltaPhi)
-                        print("deltaPhi")
-                        print(deltaPhi)
-                    print("wheelAngle")
-                    print(wheelAngle)
-                wheelAngleCounter = wheelAngleCounter + 1
-
-                #print("phi")
-                #print(phi)
 
 
-                if(abs(error) > 2):
-                    kPhiCorrected = 0
+                ######## Control Logic Start
+
+                if(abs(phi) > 1.57):
+                    phiNormalized = -1*sign(phi)*(abs(phi)-1.57)
+                    error = -1*error
                 else:
-                    kPhiCorrected = kPhi
-                steeringAngle = kX * error + kPhiCorrected * phi + kD * (error - lastError) + kDPhi * (phi - lastPhi)
-                if(steeringAngle > 0.3):
-                    steeringAngle = 0.3
-                if(steeringAngle < -0.3):
-                    steeringAngle = -0.3
+                    phiNormalized = phi
+
+                #print("mode")
+                #print(mode)
+                #print("phiNorm")
+                #print(phiNormalized)
+                #print("deltaY")
+                #print(lineStartY)
+                #print("rowNum")
+                #print(rowNum)
+                #print("lastRowNum")
+                #print(lastRowNum)
+                controlType = 1
+                if(mode == 1):
+                    if (controlType == 0):
+                        if(abs(error) > 2):
+                            kPhiCorrected = 0
+                        else:
+                            kPhiCorrected = kPhi
+                        steeringAngle = kX * error + kPhiCorrected * phiNormalized + kD * (error - lastError) + kDPhi * (phiNormalized - lastPhiNormalized)
+                        if(steeringAngle > 0.3):
+                            steeringAngle = 0.3
+                        if(steeringAngle < -0.3):
+                            steeringAngle = -0.3
+                    elif(controlType == 1):
+                        if(velMagnitude > 0):
+                            kP = 0.938/(velMagnitude**2)
+                            kD = 1.6/velMagnitude
+                            print("velMagnitude")
+                            print(velMagnitude)
+                        else:
+                            kP = 1
+                            kD = 1
+                            print("velocity is zero")
+                        L = 1.72
+                        Lh = 1.5 * velMagnitude
+                        dE = error + Lh*numpy.sin(phiNormalized)
+                        K = 0.3/L
+                        if(phiNormalized != 0):
+                            expont = -K*(numpy.sin(phiNormalized)*(kD*numpy.tan(phiNormalized) + kP*dE)/numpy.sin(phiNormalized) + Lh*((numpy.cos(phiNormalized))**4)*(kD*numpy.tan(phiNormalized) + kP*dE))
+                        else:
+                            expont = 0
+                        print("expont")
+                        print(expont)
+                        #steeringAngle = -1*mp.atan(-K*L*(numpy.cos(phiNormalized))**3 * (1 - math.exp(expont))/(1 + math.exp(expont)))
+                        steeringAngle = -1*mp.atan(-K*L*(numpy.cos(phiNormalized))**3 * -1 * mp.tanh(expont))
+                        #top = -1 * L * numpy.sin(phiNormalized) * ((numpy.cos(phiNormalized))**3) * (kD * numpy.tan(phiNormalized) + kP*dE)
+                        #bot = numpy.sin(phiNormalized) + Lh*((numpy.cos(phiNormalized))**4) * (kD * numpy.tan(phiNormalized) + kP*dE)
+                        #steeringAngle = -1*mp.atan(top/bot)
+                        #print("top")
+                        #print(top)
+                        #print("bottom")
+                        #print(bot)
+                        print("steering angle")
+                        print(steeringAngle)
+                elif(mode == 2):
+                    if(travelDirection == 1 and (points[1][0] - lineStartY) > 0):
+                        steeringAngle = 0.3
+                    elif(travelDirection == 1 and (points[1][0] - lineStartY) < 0):
+                        steeringAngle = -0.3
+                    elif(travelDirection == 2 and (points[1][0] - lineStartY) > 0):
+                        steeringAngle = -0.3
+                    elif(travelDirection == 2 and (points[1][0] - lineStartY) < 0):
+                        steeringAngle = 0.3
+
+                    if(points[1][0] - lineStartY > 0 and abs(phi) > 1.7):
+                        if(travelDirection == 1 and (rowNum - lastRowNum) == 1):
+                            mode = 1
+                            lineStartY = points[1][0]
+                            lastRowNum = rowNum
+                        elif(travelDirection == 2 and (rowNum - lastRowNum) == -1):
+                            mode = 1
+                            lineStartY = points[1][0]
+                            lastRowNum = rowNum
+                    elif(points[1][0] - lineStartY < 0 and abs(phi) < 1.44):
+                        if(travelDirection == 1 and (rowNum - lastRowNum) == 1):
+                            mode = 1
+                            lineStartY = points[1][0]
+                            lastRowNum = rowNum
+                        elif(travelDirection == 2 and (rowNum - lastRowNum) == -1):
+                            mode = 1
+                            lineStartY = points[1][0]
+                            lastRowNum = rowNum
         
                 #~27.5 deg per steering wheel rev
                 #~13.75 deg per motor rev
                 #x deg at wheels x/27.5 * 360 deg at steering wheel
                 #x deg at wheels x/27.5 * 360 * 2 deg at motor
                 steeringAngleStr = (str(float(steeringAngle*180/3.1415))+'\n').encode('latin-1')
-                print("steeringAngle")
-                print(steeringAngleStr)
-                print("steeringOffset")
-                print(steeringOffset)
-                print("phi")
-                print(phi)
 
-                arduino.write(steeringAngleStr)
+                arduino_lock.acquire()
+                arduino.write(steeringAngleStr)          
+                arduino_lock.release()
+                ######## Control Logic End
+
 
                 distFromPrev = math.sqrt((x-prevXPost)**2 + (y-prevYPost)**2 + (z-prevZPost)**2)
 
@@ -766,7 +919,7 @@ class Worker(QObject):
                         steer = -1
 
                 lastError = error
-                lastPhi = phi
+                lastPhiNormalized = phiNormalized
                 xlast = x
                 ylast = y
                 zlast = z
@@ -788,6 +941,129 @@ class Worker(QObject):
         gps.close()
         arduino.close()
         self.finished.emit()
+
+class CartesianPoint():
+    def __init__(self, x, y, ID):
+        self.x = x
+        self.y = y
+        self.parent = None
+        self.upRight = None
+        self.upLeft = None
+        self.downRight = None
+        self.downLeft = None
+        self.ID = ID
+
+    def getChild(self,type):
+        if(type == 1):
+            return self.upRight
+        elif(type == 2):
+            return self.upLeft
+        elif(type == 3):
+            return self.downLeft
+        elif(type == 4):
+            return self.downRight
+
+    def addChild(self,type,child):
+        if(type == 1):
+            self.upRight = child
+        elif(type == 2):
+            self.upLeft = child
+        elif(type == 3):
+            self.downLeft = child
+        elif(type == 4):
+            self.downRight = child
+
+class CartesianTree():
+    def __init__(self):
+        self.ID = 0
+        self.root = CartesianPoint(0,0,self.ID)
+        self.currPoints = []
+        self.ID = 1
+
+    def getQuadrant(self, parent, x, y):
+        if(x > parent.x and y > parent.y):
+            return 1
+        elif(x < parent.x and y > parent.y):
+            return 2
+        elif(x < parent.x and y < parent.y):
+            return 3
+        elif(x > parent.x and y < parent.y):
+            return 4
+        elif(x > parent.x):
+            if(not(parent.getChild(1) == None)):
+                return 1
+            else:
+                return 4
+        elif(x < parent.x):
+            if(not(parent.getChild(2) == None)):
+                return 2
+            else:
+                return 3
+        elif(y > parent.y):
+            if(not(parent.getChild(1) == None)):
+                return 1
+            else:
+                return 2
+        elif(y < parent.y):
+            if(not(parent.getChild(3) == None)):
+                return 3
+            else:
+                return 4
+        else:
+            return -1
+
+    def addPoint(self, x, y):
+        self.addPointRec(self.root, x, y)
+
+    def addPointRec(self, parent, x, y):
+        quad = self.getQuadrant(parent, x, y)
+        if(parent.getChild(quad) == None):
+            parent.addChild(quad,CartesianPoint(x,y,self.ID))
+            self.ID = self.ID + 1
+        else:
+            self.addPointRec(parent.getChild(quad), x, y)
+
+    def getPoints(self, xMax, xMin, yMax, yMin):
+        self.currPoints = []
+        self.getPointsRec(self.root, xMax, xMin, yMax, yMin)
+        #This takes care of not returning an empty list.  This is OK because
+        #the path drawing logic needs at least two IDs to draw anything
+        if(len(self.currPoints) == 0):
+            self.currPoints = [self.root]
+
+        return self.currPoints
+
+    def getPointsRec(self, parent, xMax, xMin, yMax, yMin):
+        if(not(parent == None)):
+            if(parent.x <= xMax and parent.x >= xMin and parent.y <= yMax and parent.y >= yMin):
+                self.currPoints.append(parent)
+                for i in range(1,5):
+                    self.getPointsRec(parent.getChild(i), xMax, xMin, yMax, yMin)
+            elif(parent.x >= xMax and parent.y >= yMax):
+                self.getPointsRec(parent.getChild(3),xMax,xMin,yMax,yMin)
+            elif(parent.x >= xMax and parent.y <= yMin):
+                self.getPointsRec(parent.getChild(2),xMax,xMin,yMax,yMin)
+            elif(parent.x <= xMin and parent.y >= yMax):
+                self.getPointsRec(parent.getChild(4),xMax,xMin,yMax,yMin)
+            elif(parent.x <= xMin and parent.y <= yMin):
+                self.getPointsRec(parent.getChild(1),xMax,xMin,yMax,yMin)
+            elif(parent.x >= xMax):
+                self.getPointsRec(parent.getChild(2),xMax,xMin,yMax,yMin)
+                self.getPointsRec(parent.getChild(3),xMax,xMin,yMax,yMin)
+            elif(parent.x <= xMin):
+                self.getPointsRec(parent.getChild(1),xMax,xMin,yMax,yMin)
+                self.getPointsRec(parent.getChild(4),xMax,xMin,yMax,yMin)
+            elif(parent.y >= yMax):
+                self.getPointsRec(parent.getChild(3),xMax,xMin,yMax,yMin)
+                self.getPointsRec(parent.getChild(4),xMax,xMin,yMax,yMin)
+            elif(parent.y <= yMin):
+                self.getPointsRec(parent.getChild(1),xMax,xMin,yMax,yMin)
+                self.getPointsRec(parent.getChild(2),xMax,xMin,yMax,yMin)
+
+
+
+
+
 
 
 keepRunning = True
@@ -835,6 +1111,8 @@ class Window(QMainWindow):
         #List to hold the track lines
         self.lines = []
 
+        self.tree = CartesianTree()
+
         #Point to hold the points
         self.pointStart = WorldPoint(0,0,0,True)
         self.pointsIndex = self.pointStart
@@ -844,7 +1122,7 @@ class Window(QMainWindow):
 
         self.centerDrawMode = False
 
-        self.implementWidth = 1.803 #implement width in meters
+        self.implementWidth = 10#1.803 #implement width in meters
 
         self.scale = 20 #scale in meters
         self.scaleMax = 150
@@ -917,6 +1195,12 @@ class Window(QMainWindow):
         global newPost
         data_lock.acquire()
         newPost = True
+        data_lock.release()
+
+    def headlandTurnButtonClicked(self):
+        global endRowTurnaround
+        data_lock.acquire()
+        endRowTurnaround = True
         data_lock.release()
 
     def pointButtonClicked(self):
@@ -996,6 +1280,11 @@ class Window(QMainWindow):
         self.viewModeButton.setText("View Mode")
         self.viewModeButton.setGeometry(int(self.width/2) - 100, 110, 60, 30)
         self.viewModeButton.clicked.connect(self.toggleViewMode)
+
+        self.headlandTurnButton = QPushButton(self)
+        self.headlandTurnButton.setText("Headland Turn")
+        self.headlandTurnButton.setGeometry(100, 110, 110, 30)
+        self.headlandTurnButton.clicked.connect(self.headlandTurnButtonClicked)
 
         self.menuBar = QMenuBar(self)
         self.setMenuBar(self.menuBar)
@@ -1130,10 +1419,7 @@ class Window(QMainWindow):
             self.xMaxWorld = self.xMinWorld + 20
             self.yMaxWorld = self.yMinWorld + 20
 
-            #Add the point after clearing the next.  Becasue we do a deep copy,
-            #we don't want to recursively add all of the next points
-            self.pointsIndex = self.pointStart.add(pointToDraw.clearNext())
-
+            self.tree.addPoint(self.xMinWorld,self.yMinWorld)
 
             self.xMaxWorldDisplay = self.xMaxWorld
             self.xMinWorldDisplay = self.xMinWorld
@@ -1143,6 +1429,7 @@ class Window(QMainWindow):
             self.worldCoordsInit = True
         else:
             xCoord, yCoord,tmp = pointToDraw.get()
+            self.tree.addPoint(xCoord, yCoord)
             if(xCoord > self.xMaxWorld):
                 self.xMaxWorld = xCoord
                 needToRedraw = True
@@ -1161,11 +1448,7 @@ class Window(QMainWindow):
 
                 if(needToRedraw):
                     self.redraw = True
-                    needToRedraw = False
-
-                #Add the point after clearing the next.  Becasue we do a deep copy,
-                #we don't want to recursively add all of the next points            
-                self.pointsIndex = self.pointsIndex.add(pointToDraw.clearNext())
+                    needToRedraw = False     
 
                 self.xMaxWorldDisplay = self.xMaxWorld
                 self.xMinWorldDisplay = self.xMinWorld
@@ -1175,14 +1458,14 @@ class Window(QMainWindow):
                 #print(self.xMaxWorldDisplay)
             else:
 
-                self.pointsIndex = self.pointsIndex.add(pointToDraw.clearNext())
-
                 self.redraw = True
                                
                 self.xMaxWorldDisplay = xCoord + self.scale
                 self.xMinWorldDisplay = xCoord - self.scale
                 self.yMaxWorldDisplay = yCoord + self.scale
                 self.yMinWorldDisplay = yCoord - self.scale
+
+        self.redraw = True
 
 
         self.drawPoints()
@@ -1215,19 +1498,31 @@ class Window(QMainWindow):
 
         return xScene, yScene
 
+    def convertToLocalCoords(self, xWorld, yWorld):
+        #Essentially, the equation gets the fraction of the world max/min, and
+        #multiplies that by the length of the scene, plus the scene offset
+        xScene = (xWorld - self.xMinWorldDisplay) * (self.xMax - self.xMin) / \
+        (self.xMaxWorldDisplay - self.xMinWorldDisplay) + self.xMin
+
+        yScene = (yWorld - self.yMinWorldDisplay) * (self.yMax - self.yMin) / \
+        (self.yMaxWorldDisplay - self.yMinWorldDisplay) + self.yMin
+
+        return xScene, yScene
+
+    #This function converts from scene coordinates to world coordinates
+    #This is NOT USED
+    def convertToWorldCoords(self, xScene, yScene):
+        xWorld = (xScene - self.xMin)*(self.xMaxWorldDisplay - self.xMinWorldDisplay) / \
+        (self.xMax - self.xMin) + self.xMinWorldDisplay
+
+        yWorld = (yScene - self.yMin) * (self.yMaxWorldDisplay - self.yMinWorldDisplay) / \
+        (self.yMax - self.yMin) + self.yMinWorldDisplay
+
+        return xWorld, yWorld
+
     def drawPoints(self):
         if(self.redraw):
-            '''
-            print("self.xmax")
-            print(self.xMax)
-            print("self.xmin")
-            print(self.xMin)
-            '''
-            #print("redrawing")
-            #print("Xmaxworldisplay: ")
-            #print(self.xMaxWorldDisplay)
-            #print("Xminworlddisplay: ")
-            #print(self.xMinWorldDisplay)
+
             if(self.xMaxWorldDisplay == self.xMinWorldDisplay):
                 self.trackLineWidth = 1
             else:
@@ -1238,8 +1533,6 @@ class Window(QMainWindow):
                 self.purplePen.setColor(Qt.red)
             else:
                 self.purplePen.setColor(Qt.magenta)
-            #print("Width: ")
-            #print(self.trackLineWidth)
 
             self.purplePen.setWidth(self.trackLineWidth)
 
@@ -1248,6 +1541,42 @@ class Window(QMainWindow):
 
             self.lines = []
 
+
+            #print("xMax")
+            #print(self.xMaxWorldDisplay)
+            #print("xMin")
+            #print(self.xMinWorldDisplay)
+            #print("yMax")
+            #print(self.yMaxWorldDisplay)
+            #print("yMin")
+            #print(self.yMinWorldDisplay)
+            linesInScene = self.tree.getPoints(self.xMaxWorldDisplay,self.xMinWorldDisplay, \
+                self.yMaxWorldDisplay, self.yMinWorldDisplay)
+
+            linesInScene.sort(key=lambda x: x.ID)
+
+            lastID = -2
+            lastLine = None
+            if(len(linesInScene) > 150):
+                linesInScene = linesInScene[len(linesInScene)-150:]
+            for line in linesInScene:
+                #print("ID")
+                #print(line.ID)
+                #print("Last ID")
+                #print(lastID)
+                if(line.ID-lastID == 1):
+                    lastXLocal, lastYLocal = self.convertToLocalCoords(lastLine.x, lastLine.y)
+                    xLocal, yLocal = self.convertToLocalCoords(line.x, line.y)
+                    #print("xLocal")
+                    #print(xLocal)
+                    #print("yLocal")
+                    #print(yLocal)
+                    self.drawLine(lastXLocal, lastYLocal, xLocal, yLocal)
+                lastID = line.ID
+                lastLine = line
+
+
+            '''
             self.pointsIndex, hasNext = self.pointStart.iterateSafe()
             firstRedrawPoint = True
             while(hasNext):
@@ -1257,7 +1586,8 @@ class Window(QMainWindow):
                 else:
                     currX, currY = self.convertToLocalCoords(self.pointsIndex)
                     if(self.centerDrawMode):
-                        '''
+            '''
+            '''
                         if((currX >= self.xMin and currX <= self.xMax and \
                             currY >= self.yMin and currY <= self.yMax) or \
                             (self.lastX >= self.xMin and self.lastX <= self.xMax and \
@@ -1267,7 +1597,8 @@ class Window(QMainWindow):
                         elif(doesIntersectRect(self.xMin,self.yMin,self,xMin,self.yMax,\
                             self.xMax,self.yMax,self.xMax,self.yMin,self.lastX,self.lastY,\
                             currX,currY)):
-                        '''
+            '''
+            '''
                         if(not(currX == self.lastX or currY == self.lastY)):
                             self.drawLine(self.lastX, self.lastY, currX, currY)
                     else:
@@ -1276,6 +1607,7 @@ class Window(QMainWindow):
                     self.lastX = currX
                     self.lastY = currY
                 self.pointsIndex, hasNext = self.pointsIndex.iterateSafe()
+            '''
             self.redraw = False
         else:
             currX, currY = self.convertToLocalCoords(self.pointsIndex)
@@ -1317,6 +1649,18 @@ class Window(QMainWindow):
 
         self.thread.start()
 
+    def runNetworkingTask(self):
+        self.networkingThread = QThread()
+        self.networkingWorker = networkingWorker()
+        self.networkingWorker.moveToThread(self.networkingThread)
+
+        self.networkingThread.started.connect(self.networkingWorker.runNetworkingWorker)
+        #self.networkingWorker.finished.connect(self.networkingThread.quit)
+        #self.networkingWorker.finished.connect(self.networkingWorker.deleteLater)
+        #self.networkingThread.finished.connect(self.networkingThread.deleteLater)
+
+        self.networkingThread.start()
+
     def runSaveTask(self):
         self.saveThread = QThread()
         self.saveWorker = fileWorker()
@@ -1338,6 +1682,7 @@ App = QApplication(sys.argv)
 window = Window()
 print(window.centerDrawMode)
 window.runMainTask()
+window.runNetworkingTask()
 #window.runSaveTask()
 
 #print(doesIntersect(0,0,1,5,-1,1,3,2))
